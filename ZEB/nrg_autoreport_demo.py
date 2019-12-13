@@ -20,19 +20,17 @@ from datetime import timedelta
 def download_nrg(start_date, end_date, devid, tmzn):
 
     address = "http://localhost:8080/"
-    #address =  "https://m3.meazon.com/"
-
+    # address =  "https://m3.zeb.gr/"
 
     r = requests.post(address + "api/auth/login",
-                  json={'username': 'meazon@thingsboard.org', 'password': 'meazon'}).json()
+                      json={'username': 'a.papagiannaki@meazon.com', 'password': 'eurobank'}).json()
 
     # acc_token is the token to be used in the next request
     acc_token = 'Bearer' + ' ' + r['token']
 
     start_time = str(start_date)
     end_time = str(end_date)
-    address = "http://localhost:8080/"
-   # address =  "https://m3.meazon.com/"
+
     r2 = requests.get(
         url=address + "api/plugins/telemetry/DEVICE/" + devid + "/values/timeseries?keys=cnrgA,cnrgB,cnrgC,pwrA,pwrB,pwrC&startTs=" + start_time + "&endTs=" + end_time + "&agg=NONE&limit=45000",
         headers={'Content-Type': 'application/json', 'Accept': '*/*', 'X-Authorization': acc_token}).json()
@@ -66,7 +64,7 @@ def download_nrg(start_date, end_date, devid, tmzn):
     return df,r2
 
 
-def fill_missing_values(df):
+def fill_missing_values(df,interval):
     # merge rows with same datetime to exclude nans
     df = df.groupby(df.index).max()
     df.sort_index(inplace=True)
@@ -74,7 +72,7 @@ def fill_missing_values(df):
     # create datetime series to import missing dates and reindex
     start_date = df.index[0]
     end_date = df.index[-1]
-    idx = pd.date_range(start_date, end_date, freq='1T')
+    idx = pd.date_range(start_date, end_date, freq=str(interval)+'T')
     df = df.reindex(idx)
 
     return df
@@ -91,11 +89,18 @@ def create_nrg_table(df):
     df = df.set_index('Timestamp', drop=True)
     df.index = df.index.map(lambda x: x.replace(second=0))
 
-    df = fill_missing_values(df)
+    ####################
+    tmpdf = pd.DataFrame(df['cnrgA'].dropna())
+    tmpdf['minutes'] = tmpdf.index.minute
+    tmpdf['interv'] = tmpdf['minutes'].shift(-1) - tmpdf['minutes']
+    interval = int(tmpdf['interv'].value_counts().argmax())
+    del tmpdf
+
+    df = fill_missing_values(df,interval)
     df['Timestamp'] = df.index
     df['total'] = df['cnrgA'] + df['cnrgB'] + df['cnrgC']
 
-    return df
+    return [df,interval]
 
 
 def conv_to_consumption(df):
@@ -119,26 +124,30 @@ def conv_to_consumption(df):
     return df
 
 
-def find_nans(cnrg, energy):
+def find_nans(cnrg, energy, interval):
     # store starting points of NaNs
     
 
     df_start = energy[((energy[cnrg].isnull()) & (energy[cnrg].shift().isnull() == False))]
     if df_start.empty==False:
         
-        if (np.isnan(energy[cnrg].iloc[0])==True):
-
+        if (np.isnan(energy[cnrg].iloc[0])==True or np.isnan(energy[cnrg].iloc[-1])==True):
+            print('start/end points are nan!')
             df2 = pd.DataFrame([])
             df2['endpoint'] = energy.index[(energy[cnrg].isnull()) & (energy[cnrg].shift(-1).isnull() == False)].copy()
-            df2 = df2.iloc[1:]
+
+            if np.isnan(energy[cnrg].iloc[0])==True:
+                df2 = df2.iloc[1:]
+            else:
+                df2 = df2.iloc[:-1]
 
             df_start['endpoint'] = df2['endpoint']
         else:
             df_start['endpoint'] = energy.index[(energy[cnrg].isnull()) & (energy[cnrg].shift(-1).isnull() == False)]
         df_start = df_start.drop(['cnrgA', 'cnrgB', 'cnrgC', 'total'], axis=1)
 
-        df_start['previous_dt'] = df_start.index - timedelta(minutes=1)
-        df_start['next_dt'] = df_start.endpoint + timedelta(minutes=1)
+        df_start['previous_dt'] = df_start.index - timedelta(minutes=interval)
+        df_start['next_dt'] = df_start.endpoint + timedelta(minutes=interval)
         df_start['previous_week_start'] = df_start.previous_dt - timedelta(days=7)
         df_start['previous_week_end'] = df_start.next_dt - timedelta(days=7)
 
@@ -148,7 +157,7 @@ def find_nans(cnrg, energy):
     return df_start
 
 
-def backfill(row, cnrg, energy):
+def backfill(row, cnrg, energy,interval):
     tmp = pd.DataFrame(energy.loc[row.previous_week_start:row.previous_week_end])
     if tmp.shape[0] == 0:
         tmp = pd.DataFrame(
@@ -164,21 +173,22 @@ def backfill(row, cnrg, energy):
         for i in range(1, tmp.shape[0] - 1):
             if ((tmp[cnrg].iloc[i] - start1) != diff1 and (diff1 != 0)):
                 perc = (tmp[cnrg].iloc[i] - start1) / diff1
-                energy[cnrg].loc[row.previous_dt + timedelta(minutes=i)] = perc * diff2 + start2
+                energy[cnrg].loc[row.previous_dt + timedelta(minutes=i*interval)] = perc * diff2 + start2
 
             else:
                 perc = 0
-                energy[cnrg].loc[row.previous_dt + timedelta(minutes=i)] = energy[cnrg].loc[
-                    row.previous_dt + timedelta(minutes=i - 1)]
+                energy[cnrg].loc[row.previous_dt + timedelta(minutes=i*interval)] = energy[cnrg].loc[
+                    row.previous_dt + timedelta(minutes=i*interval - interval)]
 
 
-def forwardfill(row, cnrg, energy):
+def forwardfill(row, cnrg, energy,interval):
     tmp = energy.loc[row.next_week_start:row.next_week_end]
     if tmp.shape[0] > 0:
         k = 1
+        # while all intermediate values are nan
         while ((tmp[cnrg].iloc[0] + tmp[cnrg].iloc[-1] == tmp[cnrg].sum()) & (
                 row.next_week_start - timedelta(days=k) >= energy.Timestamp.iloc[
-            0])):  # if  all intermediate values are nan
+            0])):
             tmp = energy.loc[row.next_week_start - timedelta(days=k):row.next_week_end - timedelta(days=k)]
             k = k + 1
 
@@ -189,20 +199,22 @@ def forwardfill(row, cnrg, energy):
             start2 = energy[cnrg].loc[row.previous_dt]  # starting point of current week
             diff2 = energy[cnrg].loc[row.next_dt] - start2  # diff of current week
 
+
             for i in range(1, tmp.shape[0] - 1):
 
                 #if ((tmp[cnrg].iloc[i] - start1) != diff1 and (diff1 != 0) and (np.isnan(start1)==False)):
                 if ((tmp[cnrg].iloc[i] - start1) != diff1 and (diff1 != 0)):
+
                     perc = (tmp[cnrg].iloc[i] - start1) / diff1
-                    energy[cnrg].loc[row.previous_dt + timedelta(minutes=i)] = perc * diff2 + start2
+                    energy[cnrg].loc[row.previous_dt + timedelta(minutes=i*interval)] = perc * diff2 + start2
 
                 else:
                     perc = 0
-                    energy[cnrg].loc[row.previous_dt + timedelta(minutes=i)] = energy[cnrg].loc[
-                        row.previous_dt + timedelta(minutes=i - 1)]
+                    energy[cnrg].loc[row.previous_dt + timedelta(minutes=i*interval)] = energy[cnrg].loc[
+                        row.previous_dt + timedelta(minutes=i*interval - interval)]
 
         else:
-            energy[cnrg] = energy[cnrg].interpolate()
+            energy[cnrg] = energy[cnrg].interpolate(method = 'linear')
 
 
     else:
@@ -224,21 +236,21 @@ def forwardfill(row, cnrg, energy):
                 #if ((tmp[cnrg].iloc[i] - start1) != diff1 and (diff1 != 0) and (np.isnan(start1)==False)):
                 if ((tmp[cnrg].iloc[i] - start1) != diff1 and (diff1 != 0)):
                     perc = (tmp[cnrg].iloc[i] - start1) / diff1
-                    energy[cnrg].loc[row.previous_dt + timedelta(minutes=i)] = perc * diff2 + start2
+                    energy[cnrg].loc[row.previous_dt + timedelta(minutes=i*interval)] = perc * diff2 + start2
                 else:
                     perc = 0
-                    energy[cnrg].loc[row.previous_dt + timedelta(minutes=i)] = energy[cnrg].loc[
-                        row.previous_dt + timedelta(minutes=i - 1)]
+                    energy[cnrg].loc[row.previous_dt + timedelta(minutes=i*interval)] = energy[cnrg].loc[
+                        row.previous_dt + timedelta(minutes=i*interval - interval)]
         else:
-            energy[cnrg] = energy[cnrg].interpolate()
+            energy[cnrg] = energy[cnrg].interpolate(method = 'linear')
 
 
-def fill_nans(nrg, energy):
+def fill_nans(nrg, energy,interval):
     for cnrg in nrg:
 
-        df_start = find_nans(cnrg, energy)
-
-        df_start.apply((lambda x: backfill(x, cnrg, energy)), axis=1)
+        df_start = find_nans(cnrg, energy,interval)
+        prev_status = df_start.shape[0]
+        df_start.apply((lambda x: backfill(x, cnrg, energy,interval)), axis=1)
         print('backfill ended')
 
         while energy[cnrg].isna().sum() > 0:
@@ -247,16 +259,18 @@ def fill_nans(nrg, energy):
                 energy[cnrg].iloc[0] = energy[cnrg].iloc[1]
                 
             else:
-                
-                df_start = find_nans(cnrg, energy)
-                if df_start.empty==False:
-                    df_start.apply((lambda x: forwardfill(x, cnrg, energy)), axis=1)
+                df_start = find_nans(cnrg, energy,interval)
+                cur_status = df_start.shape[0]
+                if ((df_start.empty==False) and (cur_status<prev_status)):
+                    df_start.apply((lambda x: forwardfill(x, cnrg, energy,interval)), axis=1)
+
                 else:
-                    energy[cnrg] = energy[cnrg].interpolate(limit_direction = 'both')
+                    energy[cnrg] = energy[cnrg].interpolate(method = 'linear')
+                prev_status = cur_status
         print('forward fill ended')
 
 
-def fill_dropped_nrg(df, nrg):
+def fill_dropped_nrg(df, nrg,interval):
     for cnrg in nrg:
         dfnew = df[np.isfinite(df[cnrg])].copy()
         dropped = dfnew[dfnew[cnrg] < dfnew[cnrg].shift()]
@@ -269,14 +283,14 @@ def fill_dropped_nrg(df, nrg):
             dropped['endpoint'] = dropped['endpoint1'].shift(-1)
             dropped['endpoint'].iloc[-1] = df.index[-1]
 
-            dropped.apply((lambda x: correct_dropped(x, cnrg, df)), axis=1)
+            dropped.apply((lambda x: correct_dropped(x, cnrg, df,interval)), axis=1)
 
     return df
 
 
-def correct_dropped(row, cnrg, df):
+def correct_dropped(row, cnrg, df,interval):
     #df[cnrg].loc[row.Timestamp:row.endpoint] = np.sum([df[cnrg], df[cnrg].loc[row.endpoint1]])
-    if df[cnrg].loc[row.Timestamp]>df[cnrg].loc[row.endpoint1-timedelta(minutes = 1)]:
+    if df[cnrg].loc[row.Timestamp]>df[cnrg].loc[row.endpoint1-timedelta(minutes = interval)]:
         df[cnrg].loc[row.endpoint1] = df[cnrg].loc[row.Timestamp]
     else:
         df[cnrg].loc[row.Timestamp:row.endpoint] = np.sum([df[cnrg], np.abs(df[cnrg].loc[row.endpoint1]-df[cnrg].loc[row.Timestamp])])
@@ -290,21 +304,23 @@ def get_energy_data(start_date, end_date, devid, tmzn):
     
     if dfcnrg.empty == True:
         energy = pd.DataFrame([])
-        return energy,r2
+        interval=np.nan()
+        return energy,r2,interval
     else:
 
         nrg = ['cnrgA', 'cnrgB', 'cnrgC']
-        energy = create_nrg_table(dfcnrg)
+        [energy, interval] = create_nrg_table(dfcnrg)
         
         
-        if ((energy.cnrgA.isna().sum() > 0.6 * energy.shape[0]) | (energy.shape[0] < 7 * 24 * 60)):
+        if ((energy.cnrgA.isna().sum() > 0.6 * energy.shape[0]) | (energy.shape[0] < 7 * 24 * 60/interval)):
             print('Very few values!')
             energy = pd.DataFrame([])
-            return energy,r2
+            interval = np.nan()
+            return energy,r2,interval
         else:
 
             print('Correcting energy dropdowns')
-            energy = fill_dropped_nrg(energy, nrg)
+            energy = fill_dropped_nrg(energy, nrg,interval)
 
             print('Filling missing values')
             energy = conv_to_consumption(energy)
@@ -317,7 +333,7 @@ def get_energy_data(start_date, end_date, devid, tmzn):
             energy.cnrgC[energy.diffC.shift(-1) > thresC] = np.nan
 
             energy = conv_to_consumption(energy)
-            fill_nans(nrg, energy)
+            fill_nans(nrg, energy,interval)
             energy = conv_to_consumption(energy)
           
             energy['Timestamp'] = energy['Timestamp'].dt.tz_localize('utc').dt.tz_convert(tmzn)
@@ -331,7 +347,7 @@ def get_energy_data(start_date, end_date, devid, tmzn):
             energy.totalnrg = energy.totalnrg / 1000
 
             print('Energy df has successfully been created')
-            return energy,r2
+            return energy,r2,interval
 
 
 def set_labels(df):
@@ -342,7 +358,7 @@ def set_labels(df):
     dfnew = df.set_index('Timestamp')
     dfnew = dfnew.resample('1D').sum()
 
-    if (dfnew.shape[0] >= 15):
+    if (dfnew.shape[0] >= 8):
         dfnew.reset_index(drop=False, inplace=True)
         dfnew['working_day'] = dfnew['Timestamp'].apply(lambda x: x.weekday())
         dfnew['working_day'] = dfnew['working_day'].apply(lambda x: 1 if (x < 5) else 0)
@@ -396,10 +412,10 @@ def set_labels(df):
     return df
 
 
-def impute_weather_data(df):
-    df.tmp = df.tmp.fillna(method='bfill', limit=60)
+def impute_weather_data(df,interval):
+    df.tmp = df.tmp.fillna(method='bfill', limit=int(60/interval))
     # fill nans with previous day weather data
-    df['prev_tmp'] = np.roll(df.tmp, 1440)
+    df['prev_tmp'] = np.roll(df.tmp, 24*int(60/interval))
 
     df.loc[df['tmp'].isnull(), 'tmp'] = df['prev_tmp']
 
@@ -433,15 +449,15 @@ def create_power_table(dfpwr):
 
     return dfpwr
 
-def impute_consumption_data(df):
+def impute_consumption_data(df,interval):
     df.pwrA = df.pwrA.fillna(method='bfill', limit=1)
     df.pwrB = df.pwrB.fillna(method='bfill', limit=1)
     df.pwrC = df.pwrC.fillna(method='bfill', limit=1)
 
     # fill nans with previous week's consumption
-    df['prev_pwrA'] = np.roll(df.pwrA, 10080)
-    df['prev_pwrB'] = np.roll(df.pwrB, 10080)
-    df['prev_pwrC'] = np.roll(df.pwrC, 10080)
+    df['prev_pwrA'] = np.roll(df.pwrA, 24*7*int(60/interval))
+    df['prev_pwrB'] = np.roll(df.pwrB, 24*7*int(60/interval))
+    df['prev_pwrC'] = np.roll(df.pwrC, 24*7*int(60/interval))
 
     df.loc[df['pwrA'].isnull(), 'pwrA'] = df['prev_pwrA']
     df.loc[df['pwrB'].isnull(), 'pwrB'] = df['prev_pwrB']
@@ -462,15 +478,15 @@ def impute_consumption_data(df):
     return df
 
 
-def download_data(start_date, end_date, devid, assetid, r2, tmzn):
+def download_data(start_date, end_date, devid, assetid, r2, tmzn,interval):
     start_time = str(start_date)
     end_time = str(end_date)
 
     address = "http://localhost:8080/"
-    #address =  "https://m3.meazon.com/"
+    # address =  "https://m3.zeb.gr/"
 
     r = requests.post(address + "api/auth/login",
-                      json={'username': 'meazon@thingsboard.org', 'password': 'meazon'}).json()
+                      json={'username': 'a.papagiannaki@meazon.com', 'password': 'eurobank'}).json()
     # acc_token is the token to be used in the next request
     acc_token = 'Bearer' + ' ' + r['token']
 
@@ -482,12 +498,13 @@ def download_data(start_date, end_date, devid, assetid, r2, tmzn):
 
  
     r3 = requests.get(
-        url= address + "api/plugins/telemetry/ASSET/" + assetid + "/values/timeseries?keys=tmp&startTs=" + start_time + "&endTs=" + end_time + "&agg=NONE&limit=45000",
+        url= address + "api/plugins/telemetry/ASSET/"+ assetid +"/values/timeseries?keys=tmp&startTs=" + start_time + "&endTs=" + end_time + "&agg=NONE&limit=45000",
         headers={'Content-Type': 'application/json', 'Accept': '*/*', 'X-Authorization': acc_token}).json()
  
 
     if len(r2) == 0:
-        return df, filename
+        df = pd.DataFrame([])
+        return df
 
     
     dfA = pd.DataFrame(r2['pwrA'])
@@ -515,12 +532,12 @@ def download_data(start_date, end_date, devid, assetid, r2, tmzn):
     df.reset_index(inplace=True, drop=True)
     start_date = df.Timestamp[0]
     end_date = df.Timestamp[df.shape[0] - 1]
-    date_indices = pd.date_range(start=start_date, end=end_date, freq='T')
+    date_indices = pd.date_range(start=start_date, end=end_date, freq=str(interval)+'T')
     df.set_index('Timestamp', inplace=True)
     df = df.reindex(date_indices)
     df.reset_index(drop=False, inplace=True)
     df.rename(columns={"index": "Timestamp"}, inplace=True)
-    df = impute_consumption_data(df)   
+    df = impute_consumption_data(df,interval)
     df['Timestamp'] = pd.to_datetime(df['Timestamp'], format='%Y/%m/%d %H:%M:%S.%f')
     df = df.sort_values(by="Timestamp")
 
@@ -528,6 +545,7 @@ def download_data(start_date, end_date, devid, assetid, r2, tmzn):
 
 
     if len(r3) != 0:
+      print('Temperature not empty')
       dfT = pd.DataFrame(r3['tmp'])  
       dfT.set_index('ts', inplace=True)
       dfT.columns = ['tmp']
@@ -544,11 +562,12 @@ def download_data(start_date, end_date, devid, assetid, r2, tmzn):
       dfT['Timestamp'] = pd.to_datetime(dfT['Timestamp'], format='%Y/%m/%d %H:%M:%S.%f')
       dfT = dfT.sort_values(by="Timestamp")
       dfT = dfT.set_index('Timestamp', drop=True)
-      dfT = dfT.resample('1T').sum()
+      dfT = dfT.resample(str(interval)+'T').sum()
       dfT = dfT.replace(0.0, np.nan)
+
       
       df = pd.merge(df, dfT, how='left', on='Timestamp')
-      df = impute_weather_data(df)
+      df = impute_weather_data(df,interval)
       df['tmp'] = df['tmp'].astype(float)
     
     df['Timestamp'] = df['Timestamp'].dt.tz_localize('utc').dt.tz_convert(tmzn)
@@ -783,7 +802,7 @@ class FPDF(FPDF):
         self.image('meazon.png', x=10, y=None, w=30, h=10)
 
 
-def create_pdf(path, filename, max_power, total_energy, month_Name, building_name):
+def create_pdf(filename, max_power, total_energy, month_Name, building_name):
     pdf = FPDF()
 
     pdf.add_page()
@@ -917,7 +936,7 @@ def create_pdf(path, filename, max_power, total_energy, month_Name, building_nam
     pdf.cell(75, 10, " ", 0, 2, 'C')
     pdf.image('energy_of_weekend_with_minimum_consumption.png', x=10, y=None, w=180, h=100, type='', link='')
 
-    os.chdir(path)
+
     pdf.output(filename + ".pdf", 'F')
 
 
@@ -933,14 +952,18 @@ def main(argv):
     building_name = str(argv[6])
     tmzn = str(argv[7])
 
-    path = '../PDF Files/'
+    # path = '../PDF Files/'
     
     
     filename = str(device_name)+'_'+str(month) + '_' + str(year)
 
     start_of_last_month = datetime.datetime(year, month, 1,  tzinfo = gettz(tmzn))
-    end_of_last_month = datetime.datetime(year, month + 1, 1, 23, 59, 59,  tzinfo = gettz(tmzn)) - datetime.timedelta(days=1)
-    utc = pytz.utc
+    next_month = month + 1
+    if next_month == 13:
+        next_month = 1
+        year = year + 1
+    end_of_last_month = datetime.datetime(year, next_month, 1, 23, 59, 59,  tzinfo = gettz(tmzn)) - datetime.timedelta(days=1)
+
 
     # UTC_OFFSET_TIMEDELTA = start_of_last_month.astimezone(utc).replace(tzinfo=None) - start_of_last_month
 
@@ -952,7 +975,7 @@ def main(argv):
     start_epoch = int(start_of_last_month.timestamp()) * 1000
     end_epoch = int(end_of_last_month.timestamp()) * 1000
 
-    [energy,r2] = get_energy_data(start_epoch, end_epoch, device_id, tmzn) 
+    [energy,r2,interval] = get_energy_data(start_epoch, end_epoch, device_id, tmzn)
  
     
 
@@ -961,7 +984,7 @@ def main(argv):
        # pdf.output("empty.pdf", 'F')
         return "empty"
     print('download power data...')
-    power = download_data(start_epoch, end_epoch, device_id, asset_id,r2, tmzn)
+    power = download_data(start_epoch, end_epoch, device_id, asset_id,r2, tmzn,interval)
     print('power data download completed')
     
     max_power = max(power.total)
@@ -973,71 +996,68 @@ def main(argv):
     energy = set_labels(energy)
     print('start creating plots...')
     try :
-      month_Name = plot_energy_for_each_day(energy)
-      plot_energy_for_the_whole_month(energy)
-      
-  
-      plot_month_statistics(energy)
-      
-      heatmap_with_energy(energy)
-      energy_of_working_day_with_maximum_consumption(energy)
-      energy_of_working_day_with_minimum_consumption(energy)
-      energy_of_weekend_with_maximum_consumption(energy)
-      energy_of_weekend_with_minimum_consumption(energy)
-  
-  
+        month_Name = plot_energy_for_each_day(energy)
+        plot_energy_for_the_whole_month(energy)
 
-      df_merged = pd.merge(power, energy, how='inner', on='Timestamp')
-      print('merged energy and power')
- 
-      try:
-        plot_energy_and_temperature(df_merged, tmzn)
-      except:
-        print('No temperature')
-      print('create pdf')
-      create_pdf(path, filename, max_power, total_energy, month_Name, building_name)
-      os.chdir('../serverFiles')
-      if os.path.isfile('plot_energy_for_each_day.png'):
-        os.remove("plot_energy_for_each_day.png")
-      if os.path.isfile('plot_energy_for_the_whole_month.png'):
-        os.remove("plot_energy_for_the_whole_month.png")
-      if os.path.isfile('plot_month_statistics.png'):
-        os.remove("plot_month_statistics.png")
-      if os.path.isfile('heatmap_with_energy.png'):
-        os.remove("heatmap_with_energy.png")
-      if os.path.isfile('energy_of_working_day_with_maximum_consumption.png'):
-        os.remove("energy_of_working_day_with_maximum_consumption.png")
-      if os.path.isfile('energy_of_working_day_with_minimum_consumption.png'):
-        os.remove("energy_of_working_day_with_minimum_consumption.png")
-      if os.path.isfile('energy_of_weekend_with_maximum_consumption.png'):
-        os.remove("energy_of_weekend_with_maximum_consumption.png")
-      if os.path.isfile('energy_of_weekend_with_minimum_consumption.png'):
-        os.remove("energy_of_weekend_with_minimum_consumption.png")
-      if os.path.isfile('plot_energy_and_temperature.png'):
-        os.remove("plot_energy_and_temperature.png")
+
+        plot_month_statistics(energy)
+
+        heatmap_with_energy(energy)
+        energy_of_working_day_with_maximum_consumption(energy)
+        energy_of_working_day_with_minimum_consumption(energy)
+        energy_of_weekend_with_maximum_consumption(energy)
+        energy_of_weekend_with_minimum_consumption(energy)
+
+
+
+        df_merged = pd.merge(power, energy, how='inner', on='Timestamp')
+        print('merged energy and power')
+        print(df_merged.head())
+
+        try:
+            plot_energy_and_temperature(df_merged, tmzn)
+        except:
+            print('No temperature')
+        print('create pdf')
+        create_pdf(filename, max_power, total_energy, month_Name, building_name)
+        if os.path.isfile('plot_energy_for_each_day.png'):
+            os.remove("plot_energy_for_each_day.png")
+        if os.path.isfile('plot_energy_for_the_whole_month.png'):
+            os.remove("plot_energy_for_the_whole_month.png")
+        if os.path.isfile('plot_month_statistics.png'):
+            os.remove("plot_month_statistics.png")
+        if os.path.isfile('heatmap_with_energy.png'):
+            os.remove("heatmap_with_energy.png")
+        if os.path.isfile('energy_of_working_day_with_maximum_consumption.png'):
+            os.remove("energy_of_working_day_with_maximum_consumption.png")
+        if os.path.isfile('energy_of_working_day_with_minimum_consumption.png'):
+            os.remove("energy_of_working_day_with_minimum_consumption.png")
+        if os.path.isfile('energy_of_weekend_with_maximum_consumption.png'):
+            os.remove("energy_of_weekend_with_maximum_consumption.png")
+        if os.path.isfile('energy_of_weekend_with_minimum_consumption.png'):
+            os.remove("energy_of_weekend_with_minimum_consumption.png")
+        if os.path.isfile('plot_energy_and_temperature.png'):
+            os.remove("plot_energy_and_temperature.png")
     except :
-      if os.path.isfile('plot_energy_for_each_day.png'):
-        os.remove("plot_energy_for_each_day.png")
-      if os.path.isfile('plot_energy_for_the_whole_month.png'):
-        os.remove("plot_energy_for_the_whole_month.png")
-      if os.path.isfile('plot_month_statistics.png'):
-        os.remove("plot_month_statistics.png")
-      if os.path.isfile('heatmap_with_energy.png'):
-        os.remove("heatmap_with_energy.png")
-      if os.path.isfile('energy_of_working_day_with_maximum_consumption.png'):
-        os.remove("energy_of_working_day_with_maximum_consumption.png")
-      if os.path.isfile('energy_of_working_day_with_minimum_consumption.png'):
-        os.remove("energy_of_working_day_with_minimum_consumption.png")
-      if os.path.isfile('energy_of_weekend_with_maximum_consumption.png'):
-        os.remove("energy_of_weekend_with_maximum_consumption.png")
-      if os.path.isfile('energy_of_weekend_with_minimum_consumption.png'):
-        os.remove("energy_of_weekend_with_minimum_consumption.png")
-      if os.path.isfile('plot_energy_and_temperature.png'):
-        os.remove("plot_energy_and_temperature.png")
-      print('fail')
-   
-
-    
+        if os.path.isfile('plot_energy_for_each_day.png'):
+            os.remove("plot_energy_for_each_day.png")
+        if os.path.isfile('plot_energy_for_the_whole_month.png'):
+            os.remove("plot_energy_for_the_whole_month.png")
+        if os.path.isfile('plot_month_statistics.png'):
+            os.remove("plot_month_statistics.png")
+        if os.path.isfile('heatmap_with_energy.png'):
+            os.remove("heatmap_with_energy.png")
+        if os.path.isfile('energy_of_working_day_with_maximum_consumption.png'):
+            os.remove("energy_of_working_day_with_maximum_consumption.png")
+        if os.path.isfile('energy_of_working_day_with_minimum_consumption.png'):
+            os.remove("energy_of_working_day_with_minimum_consumption.png")
+        if os.path.isfile('energy_of_weekend_with_maximum_consumption.png'):
+            os.remove("energy_of_weekend_with_maximum_consumption.png")
+        if os.path.isfile('energy_of_weekend_with_minimum_consumption.png'):
+            os.remove("energy_of_weekend_with_minimum_consumption.png")
+        if os.path.isfile('plot_energy_and_temperature.png'):
+            os.remove("plot_energy_and_temperature.png")
+        print('fail')
 
     return filename
 
