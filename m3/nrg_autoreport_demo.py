@@ -33,7 +33,7 @@ def download_nrg(start_date, end_date, devid, tmzn):
     end_time = str(end_date)
 
     r2 = requests.get(
-        url=address + "api/plugins/telemetry/DEVICE/" + devid + "/values/timeseries?keys=cnrgA,cnrgB,cnrgC,pwrA,pwrB,pwrC&startTs=" + start_time + "&endTs=" + end_time + "&agg=NONE&limit=45000",
+        url=address + "api/plugins/telemetry/DEVICE/" + devid + "/values/timeseries?keys=cnrgA,cnrgB,cnrgC,pwrA,pwrB,pwrC&startTs=" + start_time + "&endTs=" + end_time + "&agg=NONE&limit=300000",
         headers={'Content-Type': 'application/json', 'Accept': '*/*', 'X-Authorization': acc_token}).json()
 
     if r2:
@@ -301,7 +301,7 @@ def get_energy_data(start_date, end_date, devid, tmzn):
     
     if dfcnrg.empty == True:
         energy = pd.DataFrame([])
-        interval=np.nan()
+        interval=np.nan
         return energy,r2,interval
     else:
 
@@ -410,9 +410,9 @@ def set_labels(df):
 
 
 def impute_weather_data(df,interval):
-    df.tmp = df.tmp.fillna(method='bfill', limit=60/interval)
+    df.tmp = df.tmp.fillna(method='bfill', limit=int(60/interval))
     # fill nans with previous day weather data
-    df['prev_tmp'] = np.roll(df.tmp, 24*(60/interval))
+    df['prev_tmp'] = np.roll(df.tmp, 24*int(60/interval))
 
     df.loc[df['tmp'].isnull(), 'tmp'] = df['prev_tmp']
 
@@ -420,7 +420,7 @@ def impute_weather_data(df,interval):
 
     return df
 
-def create_power_table(dfpwr):
+def create_power_table(dfpwr,interval):
     dfpwr['pwrA'] = dfpwr['pwrA'].astype(float)
     dfpwr['pwrB'] = dfpwr['pwrB'].astype(float)
     dfpwr['pwrC'] = dfpwr['pwrC'].astype(float)
@@ -432,7 +432,7 @@ def create_power_table(dfpwr):
 
     dfpwr = dfpwr.replace(0.0, 0.000001)  # in order not to lose data with 0.0 value
 
-    dfpwr = dfpwr.resample('1T').mean()
+    dfpwr = dfpwr.resample(str(interval)+'T').mean()
     dfpwr = dfpwr.reset_index(drop=False)
     dfpwr = dfpwr.loc[(dfpwr.pwrA != 0.0) | (dfpwr.pwrB != 0.0) | (dfpwr.pwrC != 0.0)]
     dfpwr = dfpwr.reset_index(drop=True)
@@ -452,9 +452,9 @@ def impute_consumption_data(df,interval):
     df.pwrC = df.pwrC.fillna(method='bfill', limit=1)
 
     # fill nans with previous week's consumption
-    df['prev_pwrA'] = np.roll(df.pwrA, 24*7*(60/interval))
-    df['prev_pwrB'] = np.roll(df.pwrB, 24*7*(60/interval))
-    df['prev_pwrC'] = np.roll(df.pwrC, 24*7*(60/interval))
+    df['prev_pwrA'] = np.roll(df.pwrA, 24*7*int(60/interval))
+    df['prev_pwrB'] = np.roll(df.pwrB, 24*7*int(60/interval))
+    df['prev_pwrC'] = np.roll(df.pwrC, 24*7*int(60/interval))
 
     df.loc[df['pwrA'].isnull(), 'pwrA'] = df['prev_pwrA']
     df.loc[df['pwrB'].isnull(), 'pwrB'] = df['prev_pwrB']
@@ -495,7 +495,7 @@ def download_data(start_date, end_date, devid, assetid, r2, tmzn,interval):
 
  
     r3 = requests.get(
-        url= address + "api/plugins/telemetry/ASSET/"+ assetid +"/values/timeseries?keys=tmp&startTs=" + start_time + "&endTs=" + end_time + "&agg=NONE&limit=45000",
+        url= address + "api/plugins/telemetry/ASSET/"+ assetid +"/values/timeseries?keys=tmp&startTs=" + start_time + "&endTs=" + end_time + "&agg=NONE&limit=300000",
         headers={'Content-Type': 'application/json', 'Accept': '*/*', 'X-Authorization': acc_token}).json()
  
 
@@ -525,7 +525,7 @@ def download_data(start_date, end_date, devid, assetid, r2, tmzn,interval):
     df.columns = ['Timestamp', 'pwrA', 'pwrB', 'pwrC']
 
     
-    df = create_power_table(df)
+    df = create_power_table(df,interval)
     df.reset_index(inplace=True, drop=True)
     start_date = df.Timestamp[0]
     end_date = df.Timestamp[df.shape[0] - 1]
