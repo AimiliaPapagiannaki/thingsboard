@@ -97,6 +97,7 @@ def create_nrg_table(df):
     interval = int(tmpdf['interv'].value_counts().argmax())
     del tmpdf
 
+    df.index = df.index.round(str(interval) + 'T')
     df = fill_missing_values(df,interval)
     df['Timestamp'] = df.index
     df['total'] = df['cnrgA'] + df['cnrgB'] + df['cnrgC']
