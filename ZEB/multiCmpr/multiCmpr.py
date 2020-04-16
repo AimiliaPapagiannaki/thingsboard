@@ -66,22 +66,7 @@ def align_resample(df, interval, tmzn):
     # df = df.resample('5T', label='right', closed='right').max()
     res = int(interval)/1000
     df = df.resample(str(res)+'S').max()
-    # if ('cnrgA' in df.columns):
-    #     Amin = df['cnrgA'].min()
-    # else:
-    #     Amin = np.nan
-    # if ('cnrgB' in df.columns):
-    #     Bmin = df['cnrgB'].min()
-    # else:
-    #     Bmin = np.nan
-    # if ('cnrgC' in df.columns):
-    #     Cmin = df['cnrgC'].min()
-    # else:
-    #     Cmin = np.nan
 
-    # df = df.groupby(df.index).max()
-    # df.sort_index(inplace=True)
-    # df = df.iloc[1:]
     ##########set timezone
     df['ts'] = df.index
     df['ts'] = df['ts'].dt.tz_localize('utc').dt.tz_convert(tmzn)
@@ -109,7 +94,6 @@ def read_data(devid, acc_token, address, start_time, end_time, interval, descrip
     else:
         aggfn = 'AVG'
 
-    # print('request is:',address + "/api/plugins/telemetry/DEVICE/" + devid + "/values/timeseries?keys=" + descriptors + "&startTs=" + start_time + "&endTs=" + end_time + "&interval="+str(interval)+"&agg="+aggfn+"&limit=1000000",)
     r2 = requests.get(
         url=address + "/api/plugins/telemetry/DEVICE/" + devid + "/values/timeseries?keys=" + descriptors + "&startTs=" + start_time + "&endTs=" + end_time + "&interval="+interval+"&agg="+aggfn+"&limit=1000000",
         headers={'Content-Type': 'application/json', 'Accept': '*/*', 'X-Authorization': acc_token}).json()
@@ -210,20 +194,8 @@ def read_data(devid, acc_token, address, start_time, end_time, interval, descrip
             df['ts'] = df.index
             df.reset_index(drop=True, inplace=True)
 
-        #
-        #     if (('Average active power A (kW)' in df.columns) and ('Average active power C (kW)' in df.columns) and (
-        #             'Average active power B (kW)' in df.columns)):
-        #         df['Total Average active power (kW)'] = df['Average active power A (kW)'] + df[
-        #             'Average active power B (kW)'] + df['Average active power C (kW)']
-        #     if (('Reactive Power A (kVAR)' in df.columns) and ('Reactive Power C (kVAR)' in df.columns) and (
-        #             'Reactive Power B (kVAR)' in df.columns)):
-        #         df['Total Reactive Power (kVAR)'] = df['Reactive Power A (kVAR)'] + df['Reactive Power B (kVAR)'] + df[
-        #             'Reactive Power C (kVAR)']
-        #
-        #
-        #     # df['ts'] = df['ts'].dt.tz_localize('utc').dt.tz_convert(tmzn)
+
             df['Date'] = [d.date() for d in df['ts']]
-            # df['seconds'] = df['Date'].seconds
             df['Time ' + tmzn] = [d.time() for d in df['ts']]
             df = df.drop('ts', axis=1)
             # change order of columns
@@ -244,26 +216,23 @@ def main(argv):
     print('devset:',devset)
     interval = str(argv[2])
 
-    # start_time = str(argv[2])
 
 
     tmzn = 'Europe/Athens'
 
 
-    # path = '../xlsx files'
-    #
-    # path = path + '/'
-    # os.chdir(path)
+    path = '../multiCmpr files'
+
+    path = path + '/'
+    os.chdir(path)
     filename = 'Multi_Compare.xlsx'
 
-    # address = "http://157.230.210.37:8081"
-    # address = "http://localhost:8080"
-    address =  "https://m3.meazon.com"
+    address = "http://localhost:8080"
+    # address =  "https://m3.meazon.com"
+
 
     r = requests.post(address + "/api/auth/login",
-                      json={'username': 'meazon@thingsboard.org', 'password': 'meazon'}).json()
-    # r = requests.post(address + "/api/auth/login",
-    #                   json={'username': 'a.papagiannaki@meazon.com', 'password': 'eurobank'}).json()
+                      json={'username': 'a.papagiannaki@meazon.com', 'password': 'eurobank'}).json()
 
     # acc_token is the token to be used in the next request
     acc_token = 'Bearer' + ' ' + r['token']
@@ -284,14 +253,6 @@ def main(argv):
 
             print('devname:',devName)
 
-
-
-            # read ID and name of building's devices
-            # devid = str(device['to']['id'])
-            # devName = str(device['toName'])
-            # print(devName)
-
-            # print('devname:',devName)
             summary = read_data(devid, acc_token, address, start_time, end_time, interval, descriptors, tmzn)
 
             if summary.empty == False:
