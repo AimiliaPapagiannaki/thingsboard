@@ -56,7 +56,7 @@ def conv_to_consumption(df, interval, Amin, Bmin, Cmin):
         df.rename(columns={"total": "Total Consumed energy (kWh)"}, inplace=True)
         df = df[["Total Consumed energy (kWh)"]]
     df = df.iloc[1:]
-    print(df.head(10))
+    #print(df.head(10))
     return df
 
 
@@ -64,8 +64,7 @@ def align_resample(df, interval, tmzn):
     # df = df.groupby(df.index).max()
     # df.index = df.index.ceil('5T')
     # df = df.resample('5T', label='right', closed='right').max()
-    res = int(interval)/1000
-    df = df.resample(str(res)+'S').max()
+    
 
     ##########set timezone
     df['ts'] = df.index
@@ -73,6 +72,9 @@ def align_resample(df, interval, tmzn):
     df.reset_index(drop=True, inplace=True)
     df.set_index('ts', inplace=True, drop=True)
 
+    #resample at given interval to round timestamp
+    res = int(interval)/1000
+    df = df.resample(str(res)+'S').max()
 
     Amin=np.nan
     Bmin = np.nan
@@ -82,11 +84,11 @@ def align_resample(df, interval, tmzn):
 
 def read_data(devid, acc_token, address, start_time, end_time, interval, descriptors, tmzn):
 
-    if descriptors == 'totalNrg':
+    if descriptors == 'totalEnergy':
         descriptors = 'cnrgA,cnrgB,cnrgC'
-    if descriptors == 'totalPwr':
+    if descriptors == 'totalAP':
         descriptors = 'pwrA,pwrB,pwrC'
-    if descriptors == 'totalrPwr':
+    if descriptors == 'totalRP':
         descriptors = 'rpwrA,rpwrB,rpwrC'
 
     if ('cnrgA' in descriptors) or ('cnrgB' in descriptors) or ('cnrgC' in descriptors):
@@ -213,7 +215,7 @@ def read_data(devid, acc_token, address, start_time, end_time, interval, descrip
 def main(argv):
     startt = time.time()
     devset = argv[1]
-    print('devset:',devset)
+    
     interval = str(argv[2])
 
 
@@ -239,18 +241,23 @@ def main(argv):
 
 
     devices = devset.split(',')
-
+    i=0
     with pd.ExcelWriter(filename) as writer:
         for device in devices:
-
+            i=i+1
             devargs = device.split(';')
             devid = devargs[0]
             devName = devargs[1]
-            devName = devName.replace(' ', '_')
+            devName = devName.replace(' ', '')
+            devName = devName.replace('[', '')
+            devName = devName.replace(']', '')
+            devName = devName.replace('-', '')
+            devName = devName.replace('"', '')
+            devName = devName[:30]
             descriptors = devargs[2]
             start_time = str(int(devargs[3]) - int(interval))
             end_time = devargs[4]
-
+            devName = devName+str(i)
             print('devname:',devName)
 
             summary = read_data(devid, acc_token, address, start_time, end_time, interval, descriptors, tmzn)
