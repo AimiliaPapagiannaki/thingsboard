@@ -74,7 +74,12 @@ def align_resample(df, interval, tmzn):
 
     #resample at given interval to round timestamp
     res = int(interval)/1000
-    df = df.resample(str(res)+'S').max()
+    
+    if int(interval)==86400000:
+        print('daily')
+        df = df.resample('D').max()
+    else:
+        df = df.resample(str(res)+'S').max()
 
     Amin=np.nan
     Bmin = np.nan
@@ -193,6 +198,19 @@ def read_data(devid, acc_token, address, start_time, end_time, interval, descrip
 
             [df, Amin, Bmin, Cmin] = align_resample(df, interval, tmzn)
             df = conv_to_consumption(df, interval, Amin, Bmin, Cmin)
+            
+            if (('Average active power A (kW)' in df.columns) and ('Average active power B (kW)' in df.columns) and (
+            'Average active power C (kW)' in df.columns)):
+                df['total']  = df['Average active power A (kW)'] + df['Average active power B (kW)'] + df['Average active power C (kW)']
+                df.rename(columns={"total": "Total Average active power (kW)"}, inplace=True)
+                df = df[["Total Average active power (kW)"]]
+
+            if (('Reactive Power A (kVAR)' in df.columns) and ('Reactive Power B (kVAR)' in df.columns) and (
+            'Reactive Power C (kVAR)' in df.columns)):
+                df['total']  = df['Reactive Power A (kVAR)'] + df['Reactive Power B (kVAR)'] + df['Reactive Power C (kVAR)']
+                df.rename(columns={"total": "Total Reactive power (kVAR)"}, inplace=True)
+                df = df[["Total Reactive power (kVAR)"]]
+            
             df['ts'] = df.index
             df.reset_index(drop=True, inplace=True)
 
