@@ -16,7 +16,9 @@ from datetime import timedelta
 import time
 #
 #
-def conv_to_consumption(df, interval,Amin,Bmin,Cmin):
+def conv_to_consumption(ndf, interval,Amin,Bmin,Cmin):
+    df = ndf.copy()
+    df.dropna(inplace=True)
     #     convert cumulative energy to consumed energy
     if 'cnrgA' in df.columns:
         firstdif = df['cnrgA'].iloc[0]-Amin
@@ -25,7 +27,9 @@ def conv_to_consumption(df, interval,Amin,Bmin,Cmin):
         df.diffA[((df.cnrgA.isna() == False) & (df.cnrgA.shift().isna() == False))] = df.cnrgA - df.cnrgA.shift()
         df.diffA.iloc[0] = firstdif/1000  
         df.rename(columns={"diffA": "Consumed energy (kWh) A"}, inplace = True)
-        df.drop(['cnrgA'], axis=1, inplace=True)
+        ndf.drop(['cnrgA'], axis=1, inplace=True)
+        ndf = pd.concat([ndf,df[['Consumed energy (kWh) A']]],axis = 1)
+
 
     if 'cnrgB' in df.columns:
         firstdif = df['cnrgB'].iloc[0]-Bmin
@@ -34,7 +38,9 @@ def conv_to_consumption(df, interval,Amin,Bmin,Cmin):
         df.diffB[(df.cnrgB.isna() == False) & (df.cnrgB.shift().isna() == False)] = df.cnrgB - df.cnrgB.shift()
         df.diffB.iloc[0] = firstdif/1000
         df.rename(columns={"diffB": "Consumed energy (kWh) B"}, inplace=True)
-        df.drop(['cnrgB'], axis=1, inplace=True)
+        ndf.drop(['cnrgB'], axis=1, inplace=True)
+        ndf = pd.concat([ndf,df[['Consumed energy (kWh) B']]],axis = 1)
+
 
     if 'cnrgC' in df.columns:
         firstdif = df['cnrgC'].iloc[0]-Cmin
@@ -43,15 +49,15 @@ def conv_to_consumption(df, interval,Amin,Bmin,Cmin):
         df.diffC[(df.cnrgC.isna() == False) & (df.cnrgC.shift().isna() == False)] = df.cnrgC - df.cnrgC.shift()
         df.diffC.iloc[0] = firstdif/1000
         df.rename(columns={"diffC": "Consumed energy (kWh) C"}, inplace=True)
-        df.drop(['cnrgC'], axis=1, inplace=True)
+        ndf.drop(['cnrgC'], axis=1, inplace=True)
+        ndf = pd.concat([ndf,df[['Consumed energy (kWh) C']]],axis = 1)
 
     if (('Consumed energy (kWh) A' in df.columns) and ('Consumed energy (kWh) B' in df.columns) and ('Consumed energy (kWh) C' in df.columns)):
-        df['total'] = np.nan
-        df.total[(df['Consumed energy (kWh) A'].isna() == False) & (df['Consumed energy (kWh) B'].isna() == False) & (
-                df['Consumed energy (kWh) C'].isna() == False)] = df['Consumed energy (kWh) A'] + df['Consumed energy (kWh) B'] + df['Consumed energy (kWh) C']
+        df['total'] = df['Consumed energy (kWh) A'] + df['Consumed energy (kWh) B'] + df['Consumed energy (kWh) C']
         df.rename(columns={"total": "Total Consumed energy (kWh)"}, inplace = True)
-    print(df.head())
-    return df
+        ndf = pd.concat([ndf,df[['Total Consumed energy (kWh)']]],axis = 1)
+    print('df after consumption:',ndf.tail())
+    return ndf
 
 def align_resample(df, interval,tmzn):
 
@@ -59,6 +65,7 @@ def align_resample(df, interval,tmzn):
     df = df.groupby(df.index).max()
     df.index = df.index.ceil('5T')
     df =  df .resample('5T',label = 'right',closed = 'right').max()
+  
 	
     if ('cnrgA' in df.columns):  
       Amin = df['cnrgA'].min()
@@ -76,39 +83,48 @@ def align_resample(df, interval,tmzn):
    # df = df.groupby(df.index).max()
    # df.sort_index(inplace=True)
     df = df.iloc[1:]
+    
+    
     ##########set timezone
     df['ts'] = df.index
+    df['minut'] = [d.time().minute for d in df['ts']]
+    if df['minut'].iloc[-1]==0:
+      df = df.iloc[:-1]   
+    df.drop('minut',axis=1, inplace=True)
+     
     df['ts'] = df['ts'].dt.tz_localize('utc').dt.tz_convert(tmzn)
     df.reset_index(drop=True, inplace=True)
     df.set_index('ts',inplace = True, drop = True)
     if int(interval)>=1440:
+      res='D'
       side = 'left'
       closed='left'
     else:
+      res=interval+'T'
       side = 'left'
       closed='left' 
    
     if (('cnrgA' in df.columns) and ('cnrgB' in df.columns) and ('cnrgC' in df.columns)):
-      df_nrg = df.resample(interval+'T',label = side,closed = closed).max().copy()
+      df_nrg = df.resample(res,label = side,closed = closed).max().copy()
       df_nrg = df_nrg[['cnrgA','cnrgB','cnrgC']]
 	
     if (('Average active power A (kW)' in df.columns) and ('Average active power C (kW)' in df.columns) and ('Average active power B (kW)' in df.columns)):
-      df_demand = df.resample(interval+'T',label=side, closed=closed).max().copy()
+      df_demand = df.resample(res,label=side, closed=closed).max().copy()
       df_demand = df_demand[['Average active power A (kW)','Average active power B (kW)','Average active power C (kW)']]
       df_demand.rename(columns={"Average active power A (kW)": "Maximum active power A (kW)","Average active power B (kW)": "Maximum active power B (kW)","Average active power C (kW)": "Maximum active power C (kW)"}, inplace = True)
       
-      df = df.resample(interval+'T',label=side,closed=closed).mean()
+      df = df.resample(res,label=side,closed=closed).mean()
       df.reset_index(inplace = True, drop = False)
       df.set_index('ts',inplace = True, drop = False)
       df = pd.concat([df,df_demand], axis = 1)
     else:
-      df = df.resample(interval+'T',label=side,closed=closed).mean()
+      df = df.resample(res,label=side,closed=closed).mean()
       df.reset_index(inplace = True, drop = False)
       df.set_index('ts',inplace = True, drop = False)
     if (('cnrgA' in df.columns) and ('cnrgB' in df.columns) and ('cnrgC' in df.columns)):
       df = df.drop(['cnrgA','cnrgB','cnrgC'],axis = 1)
       df = pd.concat([df,df_nrg], axis = 1)
-    print(df.head())
+   
    
     return df,Amin,Bmin,Cmin
 
@@ -279,6 +295,7 @@ def read_data(devid, acc_token, address, start_time, end_time, interval, descrip
     
             
             [df,Amin,Bmin,Cmin] = align_resample(df, interval,tmzn)
+            
             df = conv_to_consumption(df, interval,Amin,Bmin,Cmin)
     
     
@@ -353,7 +370,7 @@ def main(argv):
 
                 #print('devname:',devName)
                 summary = read_data(devid,acc_token,address, start_time, end_time, interval, descriptors,tmzn)
-                
+                print('df to write:',df.tail())
                 
                 if summary.empty==False:
                     #if int(interval)==1440:
@@ -367,7 +384,7 @@ def main(argv):
                         sum_nrg = sum_nrg.append(new_row, ignore_index = True)  
                         sum_nrg.to_excel(writer,sheet_name = 'Summary', index = False)
                     
-                    devName = devName.replace(':','')
+                    devName = devName.replace(':','_')
                     summary.to_excel(writer,sheet_name = devName, index = False)
                 else:
                     df = pd.DataFrame({'There are no measurements for the selected period':[]})
@@ -387,8 +404,8 @@ def main(argv):
         summary = read_data(devid, acc_token, address, start_time, end_time, interval, descriptors, tmzn)
         
         if summary.empty==False:
-            if int(interval)==1440:
-                summary = summary.iloc[:-1]
+            #if int(interval)==1440:
+                #summary = summary.iloc[:-1]
             with pd.ExcelWriter(filename) as writer:
                 if ('Total Consumed energy (kWh)' in summary.columns):
                     new_row = {'Power meter':devName, 'Total consumed energy (kWh)':summary['Total Consumed energy (kWh)'].sum()}
