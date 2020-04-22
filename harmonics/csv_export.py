@@ -72,15 +72,17 @@ def main(argv):
     descriptors = argv[2]
     start_time = argv[3]
     end_time = argv[4]
-
-    # path = '../csv files'
+    
+    
+        
+    path = 'csv files'
     #
-    # path = path + '/'
-    # os.chdir(path)
-    filename = 'csv_export.csv'
+    path = path + '/'
+    os.chdir(path)
+    filename = 'data_'+str(start_time)+'+'+str(end_time)+'.csv'
 
-    # address = "http://localhost:8080"
-    address =  "http://52.77.235.183:8080"
+    address = "http://localhost:8080"
+    #address =  "http://52.77.235.183:8080"
 
     r = requests.post(address + "/api/auth/login",
                       json={'username': 'tenant@thingsboard.org', 'password': 'tenant'}).json()
@@ -88,10 +90,32 @@ def main(argv):
     # acc_token is the token to be used in the next request
     acc_token = 'Bearer' + ' ' + r['token']
 
-    summary = read_data(devid, acc_token, address, start_time, end_time, descriptors)
-
-    if not summary.empty:
-        summary.to_csv(filename, index=True)
+    
+    timediff = int(end_time)-int(start_time)
+    
+    # if difference between end and start time is greater than 5 minutes, split data 
+    if timediff<300000:
+        summary = read_data(devid, acc_token, address, start_time, end_time, descriptors)
+    
+        if not summary.empty:
+            summary.to_csv(filename, index=True)
+    else:
+        print('time requested larger than 5 minutes...')
+        svec = np.arange(int(start_time),int(end_time),300000)
+        for st in svec:
+            en = st+300000-1
+            
+            if int(end_time)-en<=0: en = int(end_time)
+            print('start and end of iteration:',st,en)
+        
+            summary = read_data(devid, acc_token, address, str(st), str(en), descriptors)
+            if not summary.empty:
+                if os.path.isfile(filename)==False:
+                    summary.to_csv(filename, index=True)
+                else:
+                    summary.to_csv(filename, index=True,mode='a', header=False)
+           
+            
 
     elapsed = time.time() - startt
     print("---  seconds ---", elapsed)
