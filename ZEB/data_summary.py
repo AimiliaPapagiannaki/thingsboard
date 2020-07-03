@@ -16,6 +16,36 @@ from datetime import timedelta
 import time
 #
 #
+
+def fill_dropped_nrg(df, nrg,interval):
+    df['Timestamp'] = df.index
+    for cnrg in nrg:
+        dfnew = df[np.isfinite(df[cnrg])].copy()
+        dropped = dfnew[dfnew[cnrg] < dfnew[cnrg].shift()]
+
+        if dropped.empty == False:
+            # keep endpoint of range of reseted values
+            dropped['endpoint1'] = dfnew.index[dfnew[cnrg] > dfnew[cnrg].shift(-1)]
+
+            # shift endpoints to match starting points and set last endpoint as the last instance of df
+            dropped['endpoint'] = dropped['endpoint1'].shift(-1)
+            dropped['endpoint'].iloc[-1] = df.index[-1]
+
+            dropped.apply((lambda x: correct_dropped(x, cnrg, df,interval)), axis=1)
+    
+    df.drop('Timestamp',axis=1,inplace=True)
+
+    return df
+
+
+def correct_dropped(row, cnrg, df,interval):
+    #df[cnrg].loc[row.Timestamp:row.endpoint] = np.sum([df[cnrg], df[cnrg].loc[row.endpoint1]])
+    if df[cnrg].loc[row.Timestamp]>df[cnrg].loc[row.endpoint1-timedelta(minutes = interval)]:
+        df[cnrg].loc[row.endpoint1] = df[cnrg].loc[row.Timestamp]
+    else:
+        df[cnrg].loc[row.Timestamp:row.endpoint] = np.sum([df[cnrg], np.abs(df[cnrg].loc[row.endpoint1]-df[cnrg].loc[row.Timestamp])])
+        
+        
 def conv_to_consumption(ndf, interval,Amin,Bmin,Cmin):
     df = ndf.copy()
     df.dropna(inplace=True)
@@ -65,8 +95,11 @@ def align_resample(df, interval,tmzn):
     df = df.groupby(df.index).max()
     df.index = df.index.ceil('5T')
     df =  df .resample('5T',label = 'right',closed = 'right').max()
-  
-	
+    
+  #############################
+    df = fill_dropped_nrg(df, ['cnrgA', 'cnrgB', 'cnrgC'],5)	
+ ###########################
+ 
     if ('cnrgA' in df.columns):  
       Amin = df['cnrgA'].min()
     else:
@@ -80,6 +113,7 @@ def align_resample(df, interval,tmzn):
     else:
       Cmin = np.nan
 	
+    
    # df = df.groupby(df.index).max()
    # df.sort_index(inplace=True)
     df = df.iloc[1:]
@@ -107,6 +141,8 @@ def align_resample(df, interval,tmzn):
     if (('cnrgA' in df.columns) and ('cnrgB' in df.columns) and ('cnrgC' in df.columns)):
       df_nrg = df.resample(res,label = side,closed = closed).max().copy()
       df_nrg = df_nrg[['cnrgA','cnrgB','cnrgC']]
+      
+      
 	
     if (('Average active power A (kW)' in df.columns) and ('Average active power C (kW)' in df.columns) and ('Average active power B (kW)' in df.columns)):
       df_demand = df.resample(res,label=side, closed=closed).max().copy()
@@ -370,9 +406,10 @@ def main(argv):
 
                 #print('devname:',devName)
                 summary = read_data(devid,acc_token,address, start_time, end_time, interval, descriptors,tmzn)
-                print('df to write:',df.tail())
+                
                 
                 if summary.empty==False:
+                    
                     #if int(interval)==1440:
                         #summary = summary.iloc[:-1]
                     if ('Total Consumed energy (kWh)' in summary.columns):
