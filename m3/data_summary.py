@@ -16,6 +16,9 @@ from datetime import timedelta
 import time
 #
 #
+
+
+        
 def conv_to_consumption(df, interval,Amin,Bmin,Cmin):
     #     convert cumulative energy to consumed energy
     
@@ -37,6 +40,7 @@ def conv_to_consumption(df, interval,Amin,Bmin,Cmin):
             
 
             df.loc[((df[nrg].isna() == False) & (df[nrg].shift().isna() == False)),'diff'] = df[nrg] - df[nrg].shift()
+            df.loc[df['diff']<0, 'diff'] = df.loc[df['diff']<0, 'diff'].values+df.loc[df['diff'].shift(-1)<0,nrg].values
             df['diff'].iloc[0] = firstdif
             
             df.drop([nrg], axis=1, inplace=True)
@@ -64,26 +68,40 @@ def conv_to_consumption(df, interval,Amin,Bmin,Cmin):
     return df
 
 def align_resample(df, interval,tmzn):
-    
+   
     # identify report interval and round to closest minute
     tmpdf = pd.DataFrame(df[df.columns[0]].dropna())
     tmpdf['minutes'] = tmpdf.index.minute
+    
     tmpdf['interv'] = tmpdf['minutes'].shift(-1) - tmpdf['minutes']
     inter = int(tmpdf['interv'].value_counts().idxmax())
     if inter<1:inter = 1
     del tmpdf
+    
     df.index = df.index.round(str(inter) + 'T')
+    
+    
+    #############################
+    #if 'Consumed energy (kWh) A' in df.columns:
+     #   df = fill_dropped_nrg(df, ['Consumed energy (kWh) A', 'Consumed energy (kWh) B', 'Consumed energy (kWh) C'],inter)	
+ ###########################
     
     if ('Consumed energy (kWh) A' in df.columns):  
         Amin = df['Consumed energy (kWh) A'].min()
+        if df.index[df['Consumed energy (kWh) A']==Amin][0]>df.index[0]:
+            Amin = df['Consumed energy (kWh) A'].iloc[0]
     else:
         Amin = np.nan
     if ('Consumed energy (kWh) B' in df.columns):  
         Bmin = df['Consumed energy (kWh) B'].min()
+        if df.index[df['Consumed energy (kWh) B']==Bmin][0]>df.index[0]:
+            Bmin = df['Consumed energy (kWh) B'].iloc[0]
     else:
         Bmin = np.nan
     if ('Consumed energy (kWh) C' in df.columns): 
         Cmin = df['Consumed energy (kWh) C'].min()
+        if df.index[df['Consumed energy (kWh) C']==Cmin][0]>df.index[0]:
+            Cmin = df['Consumed energy (kWh) C'].iloc[0]
     else:
         Cmin = np.nan
     
@@ -102,34 +120,38 @@ def align_resample(df, interval,tmzn):
     
     
     if int(interval)>=1440:
+        res = 'D'
         side = 'left'
     else:
+        res = interval+'T'
         side = 'right' 
     
     
     # resample df to given interval 
     if (('Consumed energy (kWh) A' in df.columns) and ('Consumed energy (kWh) B' in df.columns) and ('Consumed energy (kWh) C' in df.columns)):
-          df_nrg = df.resample(interval+'T',label = side,closed = side).max().copy()
+              
+          df_nrg = df.resample(res,label = side,closed = side).max().copy()
           df_nrg = df_nrg[['Consumed energy (kWh) A','Consumed energy (kWh) B','Consumed energy (kWh) C']]
              
     if (('Average active power A (kW)' in df.columns) and ('Average active power C (kW)' in df.columns) and ('Average active power B (kW)' in df.columns)):
-      df_demand = df.resample(interval+'T',label = side, closed = side).max().copy()
+      df_demand = df.resample(res,label = side, closed = side).max().copy()
       df_demand = df_demand[['Average active power A (kW)','Average active power B (kW)','Average active power C (kW)']]
       df_demand.rename(columns={"Average active power A (kW)": "Maximum active power A (kW)","Average active power B (kW)": "Maximum active power B (kW)","Average active power C (kW)": "Maximum active power C (kW)"}, inplace = True)
       
-      df = df.resample(interval+'T',label = side, closed = side).mean()
+      df = df.resample(res,label = side, closed = side).mean()
       df.reset_index(inplace = True, drop = False)
       df.set_index('ts',inplace = True, drop = False)
       df = pd.concat([df,df_demand], axis = 1)
     else:
-      df = df.resample(interval+'T',label = side, closed = side).mean()
+      df = df.resample(res,label = side, closed = side).mean()
       df.reset_index(inplace = True, drop = False)
       df.set_index('ts',inplace = True, drop = False)
     if (('Consumed energy (kWh) A' in df.columns) and ('Consumed energy (kWh) B' in df.columns) and ('Consumed energy (kWh) C' in df.columns)):
       df = df.drop(['Consumed energy (kWh) A','Consumed energy (kWh) B','Consumed energy (kWh) C'],axis = 1)
       df = pd.concat([df,df_nrg], axis = 1)
     
-    return df,Amin,Bmin,Cmin
+    
+    return df,Amin,Bmin,Cmin,side
 
 def read_data(devid, acc_token, address, start_time, end_time, interval, descriptors, tmzn):
 
@@ -195,13 +217,16 @@ def read_data(devid, acc_token, address, start_time, end_time, interval, descrip
     mapping['scosA'] = 'SPower factor A'
     mapping['scosB'] = 'SPower factor B'
     mapping['scosC'] = 'SPower factor C'
+    mapping['tmp'] = 'Temperature (Celsius)'
+    mapping['	clhmd'] = 'Humidity %'
        
     # watt_div is dictionary with descriptors to be divided by 1000
     watt_div = ['Average active power A (kW)','Average active power B (kW)','Average active power C (kW)','Total active power (kW)','Reactive Power A (kVAR)','Reactive Power B (kVAR)','Reactive Power C (kVAR)','Average estimated active power A (kW)','Average estimated active power B (kW)','Average estimated active power C (kW)','Consumed energy (kWh) A','Consumed energy (kWh) B','Consumed energy (kWh) C','Total Consumed energy (kWh)','Estimated consumed energy (kWh) A','Estimated consumed energy (kWh) B','Estimated consumed energy (kWh) C','Total Estimated Consumed energy (kWh)','Maximum active power A (kW)','Maximum active power B (kW)','Maximum active power C (kW)']
     
     r2 = requests.get(url=address + "/api/plugins/telemetry/DEVICE/" + devid + "/values/timeseries?keys="+descriptors+"&startTs=" + start_time + "&endTs=" + end_time + "&agg=NONE&limit=1000000",
         headers={'Content-Type': 'application/json', 'Accept': '*/*', 'X-Authorization': acc_token}).json()
-    if r2:
+    print("keys length ",len(r2.keys()))
+    if ((len(r2.keys())>0) & (len(descriptors)>0)):
         df = pd.DataFrame([])
         
 
@@ -212,7 +237,6 @@ def read_data(devid, acc_token, address, start_time, end_time, interval, descrip
             df1.columns = [mapping.get(str(desc))]
             df = pd.concat([df,df1], axis = 1)
                    
-        
 
         if df.empty == False:
         
@@ -230,7 +254,7 @@ def read_data(devid, acc_token, address, start_time, end_time, interval, descrip
                 
             
             
-            [df,Amin,Bmin,Cmin] = align_resample(df, interval,tmzn)
+            [df,Amin,Bmin,Cmin,side] = align_resample(df, interval,tmzn)
             df = conv_to_consumption(df, interval,Amin,Bmin,Cmin)
             
             
@@ -270,7 +294,7 @@ def read_data(devid, acc_token, address, start_time, end_time, interval, descrip
     else:
         df = pd.DataFrame([])
         print('Empty json!')
-    return df
+    return df,side
 
 def postproc(df):
     if ('Voltage A' in df.columns) and ('SVoltage A' in df.columns):
@@ -342,7 +366,7 @@ def main(argv):
                 print(devName)
 
                 #print('devname:',devName)
-                summary = read_data(devid,acc_token,address, start_time, end_time, interval, descriptors,tmzn)
+                [summary,side] = read_data(devid,acc_token,address, start_time, end_time, interval, descriptors,tmzn)
                 summary = postproc(summary)
                 if (int(interval)==1440 and tmzn=='America/Chicago'):
                   
@@ -352,11 +376,22 @@ def main(argv):
                     new_row = {'Power meter':devName, 'Total consumed energy (kWh)':summary['Total Consumed energy (kWh)'].sum()}
                     sum_nrg = sum_nrg.append(new_row, ignore_index = True)     
                     sum_nrg.to_excel(writer,sheet_name = 'Summary', index = False)
+                if summary.index[0]<pd.to_datetime(start_time,unit='ms').tz_localize('utc').tz_convert(tmzn):
+                    print('first row smaller than start time')
+                if summary.index[-1]>pd.to_datetime(end_time,unit='ms').tz_localize('utc').tz_convert(tmzn):
+                    print('last row bigger than end time')
                 elif ('Consumed energy (kWh) A' in summary.columns):
-                    new_row = {'Power meter':devName, 'Total consumed energy':summary['Consumed energy (kWh) A'].sum()}
+                    new_row = {'Power meter':devName, 'Total consumed energy (kWh)':summary['Consumed energy (kWh) A'].sum()}
                     sum_nrg = sum_nrg.append(new_row, ignore_index = True)  
                     sum_nrg.to_excel(writer,sheet_name = 'Summary', index = False)
                 if summary.empty==False:
+                    if ((summary.index[0]<=pd.to_datetime(start_time,unit='ms').tz_localize('utc').tz_convert(tmzn)) & (side=='right')):
+                        print('first row smaller than start time')
+                        summary = summary.iloc[1:]
+                    elif ((summary.index[-1]>pd.to_datetime(end_time,unit='ms').tz_localize('utc').tz_convert(tmzn)) & (side=='left')):
+                        print('last row bigger than end time')
+                        summary = summary.iloc[:-1]
+                    
                     if entityID == 'ed73a120-f73b-11e9-b4dc-013e65d2f65e': # if building is moxy, don't write separate A,B,C columns
                         if 'Average active power A (kW)' in summary.columns:
                             summary = summary.drop(['Average active power A (kW)','Maximum active power A (kW)'],axis=1)
@@ -378,12 +413,19 @@ def main(argv):
                             summary = summary.drop(['Reactive Power B (kVAR)'],axis = 1)
                         if 'Reactive Power C (kVAR)' in summary.columns:
                             summary = summary.drop(['Reactive Power C (kVAR)'],axis = 1)
+                        if 'Estimated consumed energy (kWh) A' in summary.columns:
+                            summary = summary.drop(['Estimated consumed energy (kWh) A'],axis=1)
+                        if 'Estimated consumed energy (kWh) B' in summary.columns:
+                            summary = summary.drop(['Estimated consumed energy (kWh) B'],axis=1)
+                        if 'Estimated consumed energy (kWh) C' in summary.columns:
+                            summary = summary.drop(['Estimated consumed energy (kWh) C'],axis=1)
                     
                     devName = devName.replace(':','')
                     summary.to_excel(writer,sheet_name = devName, index = False)
                 else:
                     df = pd.DataFrame({'There are no measurements for the selected period':[]})
-                    df.to_excel(writer,sheet_name = 'Sheet1', index = False)
+                    devName = devName.replace(':','')
+                    df.to_excel(writer,sheet_name = devName, index = False)
                 
         writer.save()
         writer.close()
@@ -394,16 +436,23 @@ def main(argv):
   
         print('devid:', devid)
         sum_nrg = pd.DataFrame([])
-        summary = read_data(devid, acc_token, address, start_time, end_time, interval, descriptors, tmzn)
+        [summary,side] = read_data(devid, acc_token, address, start_time, end_time, interval, descriptors, tmzn)
         
         if summary.empty==False:
             with pd.ExcelWriter(filename) as writer:
+                if ((summary.index[0]<=pd.to_datetime(start_time,unit='ms').tz_localize('utc').tz_convert(tmzn)) & (side=='right')):
+                    print('first row smaller than start time')
+                    summary = summary.iloc[1:]
+                elif ((summary.index[-1]>pd.to_datetime(end_time,unit='ms').tz_localize('utc').tz_convert(tmzn)) & (side=='left')):
+                    print('last row bigger than end time')
+                    summary = summary.iloc[:-1]
+                    
                 if ('Total Consumed energy (kWh)' in summary.columns):
                     new_row = {'Power meter':devName, 'Total consumed energy (kWh)':summary['Total Consumed energy (kWh)'].sum()}
                     sum_nrg = sum_nrg.append(new_row, ignore_index = True)
                     sum_nrg.to_excel(writer,sheet_name = 'Summary', index = False)
                 elif ('Consumed energy (kWh) A' in summary.columns):
-                    new_row = {'Power meter':devName, 'Total consumed energy':summary['Consumed energy (kWh) A'].sum()}
+                    new_row = {'Power meter':devName, 'Total consumed energy (kWh)':summary['Consumed energy (kWh) A'].sum()}
                     sum_nrg = sum_nrg.append(new_row, ignore_index = True)  
                     sum_nrg.to_excel(writer,sheet_name = 'Summary', index = False) 
                 if summary.empty==False:
