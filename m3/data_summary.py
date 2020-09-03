@@ -45,7 +45,7 @@ def conv_to_consumption(df, interval,Amin,Bmin,Cmin):
             
             df.drop([nrg], axis=1, inplace=True)
             df.rename(columns={"diff": nrg}, inplace = True)
-    
+            df.loc[df[nrg]>100000000,nrg] = np.nan
             #df.drop([nrg], axis=1, inplace=True)
         
     
@@ -53,7 +53,7 @@ def conv_to_consumption(df, interval,Amin,Bmin,Cmin):
     if (('Consumed energy (kWh) A' in df.columns) and ('Consumed energy (kWh) B' in df.columns) and ('Consumed energy (kWh) C' in df.columns)):
         
         df['total'] = np.nan
-        df.loc[((df['Consumed energy (kWh) A'].isna() == False) & (df['Consumed energy (kWh) B'].isna() == False) & (
+        df.loc[((df['Consumed energy (kWh) A'].isna() == False) | (df['Consumed energy (kWh) B'].isna() == False) | (
                 df['Consumed energy (kWh) C'].isna() == False)),'total'] = df['Consumed energy (kWh) A'] + df['Consumed energy (kWh) B'] + df['Consumed energy (kWh) C']
         #df.total = df['Consumed energy (kWh) A'] + df['Consumed energy (kWh) B'] + df['Consumed energy (kWh) C']
         df.rename(columns={"total": "Total Consumed energy (kWh)"}, inplace = True)
@@ -124,7 +124,7 @@ def align_resample(df, interval,tmzn):
         side = 'left'
     else:
         res = interval+'T'
-        side = 'right' 
+        side = 'left' 
     
     
     # resample df to given interval 
@@ -157,7 +157,7 @@ def read_data(devid, acc_token, address, start_time, end_time, interval, descrip
 
     # request all descriptors that have ever been assigned to this device
     r1 = requests.get(url = address+"/api/plugins/telemetry/DEVICE/"+devid+"/keys/timeseries",headers={'Content-Type': 'application/json', 'Accept': '*/*', 'X-Authorization': acc_token}).json()
- 
+    
     # keep estimated descriptors in dictionary and add them to list of asked descriptors
     estimated = {}
     estimated['pwrA'] = 'pwrAest'
@@ -218,7 +218,9 @@ def read_data(devid, acc_token, address, start_time, end_time, interval, descrip
     mapping['scosB'] = 'SPower factor B'
     mapping['scosC'] = 'SPower factor C'
     mapping['tmp'] = 'Temperature (Celsius)'
-    mapping['	clhmd'] = 'Humidity %'
+    mapping['clhmd'] = 'Humidity \%'
+    mapping['hmd'] = 'Humidity %'
+    mapping['bindc'] = 'Motion'
        
     # watt_div is dictionary with descriptors to be divided by 1000
     watt_div = ['Average active power A (kW)','Average active power B (kW)','Average active power C (kW)','Total active power (kW)','Reactive Power A (kVAR)','Reactive Power B (kVAR)','Reactive Power C (kVAR)','Average estimated active power A (kW)','Average estimated active power B (kW)','Average estimated active power C (kW)','Consumed energy (kWh) A','Consumed energy (kWh) B','Consumed energy (kWh) C','Total Consumed energy (kWh)','Estimated consumed energy (kWh) A','Estimated consumed energy (kWh) B','Estimated consumed energy (kWh) C','Total Estimated Consumed energy (kWh)','Maximum active power A (kW)','Maximum active power B (kW)','Maximum active power C (kW)']
@@ -291,8 +293,10 @@ def read_data(devid, acc_token, address, start_time, end_time, interval, descrip
             
         else:
             df = pd.DataFrame([])
+            side = ' '
     else:
         df = pd.DataFrame([])
+        side = ' '
         print('Empty json!')
     return df,side
 
@@ -367,24 +371,24 @@ def main(argv):
 
                 #print('devname:',devName)
                 [summary,side] = read_data(devid,acc_token,address, start_time, end_time, interval, descriptors,tmzn)
-                summary = postproc(summary)
-                if (int(interval)==1440 and tmzn=='America/Chicago'):
-                  
-                    summary = summary.iloc[1:]
-                
-                if ('Total Consumed energy (kWh)' in summary.columns):
-                    new_row = {'Power meter':devName, 'Total consumed energy (kWh)':summary['Total Consumed energy (kWh)'].sum()}
-                    sum_nrg = sum_nrg.append(new_row, ignore_index = True)     
-                    sum_nrg.to_excel(writer,sheet_name = 'Summary', index = False)
-                if summary.index[0]<pd.to_datetime(start_time,unit='ms').tz_localize('utc').tz_convert(tmzn):
-                    print('first row smaller than start time')
-                if summary.index[-1]>pd.to_datetime(end_time,unit='ms').tz_localize('utc').tz_convert(tmzn):
-                    print('last row bigger than end time')
-                elif ('Consumed energy (kWh) A' in summary.columns):
-                    new_row = {'Power meter':devName, 'Total consumed energy (kWh)':summary['Consumed energy (kWh) A'].sum()}
-                    sum_nrg = sum_nrg.append(new_row, ignore_index = True)  
-                    sum_nrg.to_excel(writer,sheet_name = 'Summary', index = False)
+
                 if summary.empty==False:
+                    summary = postproc(summary)
+                    if (int(interval)==1440 and tmzn=='America/Chicago'):
+                        summary = summary.iloc[1:]
+                
+                    if ('Total Consumed energy (kWh)' in summary.columns):
+                        new_row = {'Power meter':devName, 'Total consumed energy (kWh)':summary['Total Consumed energy (kWh)'].sum()}
+                        sum_nrg = sum_nrg.append(new_row, ignore_index = True)     
+                        sum_nrg.to_excel(writer,sheet_name = 'Summary', index = False)
+                        
+                    
+                    elif ('Consumed energy (kWh) A' in summary.columns):
+                        new_row = {'Power meter':devName, 'Total consumed energy (kWh)':summary['Consumed energy (kWh) A'].sum()}
+                        sum_nrg = sum_nrg.append(new_row, ignore_index = True)  
+                        sum_nrg.to_excel(writer,sheet_name = 'Summary', index = False)                
+                    
+                    
                     if ((summary.index[0]<=pd.to_datetime(start_time,unit='ms').tz_localize('utc').tz_convert(tmzn)) & (side=='right')):
                         print('first row smaller than start time')
                         summary = summary.iloc[1:]
@@ -439,6 +443,17 @@ def main(argv):
         [summary,side] = read_data(devid, acc_token, address, start_time, end_time, interval, descriptors, tmzn)
         
         if summary.empty==False:
+            summary = postproc(summary)
+            if (int(interval)==1440 and tmzn=='America/Chicago'):
+                summary = summary.iloc[1:]
+            
+            if ((summary.index[0]<=pd.to_datetime(start_time,unit='ms').tz_localize('utc').tz_convert(tmzn)) & (side=='right')):
+                print('first row smaller than start time')
+                summary = summary.iloc[1:]
+            elif ((summary.index[-1]>pd.to_datetime(end_time,unit='ms').tz_localize('utc').tz_convert(tmzn)) & (side=='left')):
+                print('last row bigger than end time')
+                summary = summary.iloc[:-1]
+            
             with pd.ExcelWriter(filename) as writer:
                 if ((summary.index[0]<=pd.to_datetime(start_time,unit='ms').tz_localize('utc').tz_convert(tmzn)) & (side=='right')):
                     print('first row smaller than start time')
