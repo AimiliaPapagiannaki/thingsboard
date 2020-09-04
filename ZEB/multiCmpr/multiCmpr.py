@@ -16,7 +16,36 @@ from datetime import timedelta
 import time
 
 
-#
+###########
+def fill_dropped_nrg(df, nrg,interval):
+    df['Timestamp'] = df.index
+    print(df.head())
+    for cnrg in nrg:
+        dfnew = df[np.isfinite(df[cnrg])].copy()
+        dropped = dfnew[dfnew[cnrg] < dfnew[cnrg].shift()]
+        
+        if dropped.empty == False:
+            # keep endpoint of range of reseted values
+            dropped['endpoint1'] = dfnew.index[dfnew[cnrg] > dfnew[cnrg].shift(-1)]
+            
+            # shift endpoints to match starting points and set last endpoint as the last instance of df
+            dropped['endpoint'] = dropped['endpoint1'].shift(-1)
+            dropped['endpoint'].iloc[-1] = df.index[-1]
+
+            dropped.apply((lambda x: correct_dropped(x, cnrg, df,interval)), axis=1)
+    
+    df.drop('Timestamp',axis=1,inplace=True)
+
+    return df
+
+
+def correct_dropped(row, cnrg, df,interval):
+    #df[cnrg].loc[row.Timestamp:row.endpoint] = np.sum([df[cnrg], df[cnrg].loc[row.endpoint1]])
+    if df[cnrg].loc[row.Timestamp]>df[cnrg].loc[row.endpoint1-timedelta(minutes = interval)]:
+        df[cnrg].loc[row.endpoint1] = df[cnrg].loc[row.Timestamp]
+    else:
+        df[cnrg].loc[row.Timestamp:row.endpoint] = np.sum([df[cnrg], np.abs(df[cnrg].loc[row.endpoint1]-df[cnrg].loc[row.Timestamp])])
+###########################
 #
 def conv_to_consumption(df, interval, Amin, Bmin, Cmin):
     #     convert cumulative energy to consumed energy
@@ -55,6 +84,8 @@ def conv_to_consumption(df, interval, Amin, Bmin, Cmin):
             'Consumed energy (kWh) B'] + df['Consumed energy (kWh) C']
         df.rename(columns={"total": "Total Consumed energy (kWh)"}, inplace=True)
         df = df[["Total Consumed energy (kWh)"]]
+        
+        #df.loc[df["Total Consumed energy (kWh)"]<0,"Total Consumed energy (kWh)"] = np.nan 
     df = df.iloc[1:]
     #print(df.head(10))
     return df
@@ -65,6 +96,11 @@ def align_resample(df, interval, tmzn):
     # df.index = df.index.ceil('5T')
     # df = df.resample('5T', label='right', closed='right').max()
     
+    #############################
+    #if 'cnrgA' in df.columns:
+     #   df = fill_dropped_nrg(df, ['cnrgA', 'cnrgB', 'cnrgC'],5)	
+ ###########################
+
 
     ##########set timezone
     df['ts'] = df.index
@@ -80,7 +116,8 @@ def align_resample(df, interval, tmzn):
         df = df.resample('D').max()
     else:
         df = df.resample(str(res)+'S').max()
-
+   
+  
     Amin=np.nan
     Bmin = np.nan
     Cmin = np.nan
@@ -211,17 +248,7 @@ def read_data(devid, acc_token, address, start_time, end_time, interval, descrip
                 df.rename(columns={"total": "Total Reactive power (kVAR)"}, inplace=True)
                 df = df[["Total Reactive power (kVAR)"]]
             
-            df['ts'] = df.index
-            df.reset_index(drop=True, inplace=True)
-
-
-            df['Date'] = [d.date() for d in df['ts']]
-            df['Time ' + tmzn] = [d.time() for d in df['ts']]
-            df = df.drop('ts', axis=1)
-            # change order of columns
-            cols = df.columns.tolist()
-            cols = cols[-2:] + cols[:-2]
-            df = df[cols]
+            
         else:
             df = pd.DataFrame([])
     else:
@@ -260,34 +287,56 @@ def main(argv):
 
     devices = devset.split(',')
     i=0
+    ncol=0
+    #summary = pd.DataFrame([])
     with pd.ExcelWriter(filename) as writer:
         for device in devices:
-            i=i+1
-            devargs = device.split(';')
-            devid = devargs[0]
-            devName = devargs[1]
-            devName = devName.replace(' ', '')
-            devName = devName.replace('[', '')
-            devName = devName.replace(']', '')
-            devName = devName.replace('-', '')
-            devName = devName.replace('"', '')
-            devName = devName[:30]
-            descriptors = devargs[2]
-            start_time = str(int(devargs[3]) - int(interval))
-            end_time = devargs[4]
-            devName = devName+str(i)
-            print('devname:',devName)
-
-            summary = read_data(devid, acc_token, address, start_time, end_time, interval, descriptors, tmzn)
-
-            if summary.empty == False:
-
-                print("Writing device:",devName)
-                summary.to_excel(writer, sheet_name=devName, index=False)
-            else:
-                df = pd.DataFrame({'There are no measurements for the selected period': []})
-                df.to_excel(writer, sheet_name=devName, index=False)
-
+          i=i+1
+          devargs = device.split(';')
+          devid = devargs[0]
+          devName = devargs[1]
+                #devName = devName.replace(' ', '')
+                #devName = devName.replace('[', '')
+                #devName = devName.replace(']', '')
+                #devName = devName.replace('-', '')
+          devName = devName.replace('"', '')
+                #devName = devName[:30]
+          descriptors = devargs[2]
+          start_time = str(int(devargs[3]) - int(interval))
+          end_time = devargs[4]
+          #devName = devName+str(i)
+          print('devname:',devName)
+    
+          df = read_data(devid, acc_token, address, start_time, end_time, interval, descriptors, tmzn)
+          print('ncol before:',ncol)
+          if df.empty == False:
+              df.columns=[str(devName)]
+              summary = df.copy()
+              summary['ts'] = summary.index
+              summary.reset_index(drop=True, inplace=True)
+              summary['Date'] = [d.date() for d in summary['ts']]
+              summary['Time ' + tmzn] = [d.time() for d in summary['ts']]
+              summary = summary.drop('ts', axis=1)
+        # change order of columns
+              cols = summary.columns.tolist()
+              cols = cols[-2:] + cols[:-2]
+              summary = summary[cols]
+              summary.to_excel(writer, index=False, startcol=ncol)
+              
+              
+              
+          else:
+              df = pd.DataFrame({devName: ['There are no measurements for the selected period']})
+              summary = df.copy()
+              summary.to_excel(writer, index=False, startcol=ncol)
+              #df.to_excel(writer, sheet_name=devName, index=False)
+          ncol = ncol+len(summary.columns)+1
+          print('ncol after:',ncol)
+    
+    
+    #if summary.empty == False:
+     #   with pd.ExcelWriter(filename) as writer:
+      #      summary.to_excel(writer, index=False)
     writer.save()
     writer.close()
 
