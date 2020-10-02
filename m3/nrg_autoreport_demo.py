@@ -36,7 +36,7 @@ def download_nrg(start_date, end_date, devid, tmzn):
         url=address + "api/plugins/telemetry/DEVICE/" + devid + "/values/timeseries?keys=cnrgA,cnrgB,cnrgC,pwrA,pwrB,pwrC&startTs=" + start_time + "&endTs=" + end_time + "&agg=NONE&limit=300000",
         headers={'Content-Type': 'application/json', 'Accept': '*/*', 'X-Authorization': acc_token}).json()
 
-    if r2:
+    if 'cnrgA' in r2:
         dfA = pd.DataFrame(r2['cnrgA'])
         dfA.set_index('ts', inplace=True)
         dfA.columns = ['cnrgA']
@@ -69,12 +69,12 @@ def fill_missing_values(df,interval):
     # merge rows with same datetime to exclude nans
     df = df.groupby(df.index).max()
     df.sort_index(inplace=True)
-
     # create datetime series to import missing dates and reindex
     start_date = df.index[0]
     end_date = df.index[-1]
     idx = pd.date_range(start_date, end_date, freq=str(interval)+'T')
     df = df.reindex(idx)
+    print(df.info())
 
     return df
 
@@ -89,15 +89,16 @@ def create_nrg_table(df):
     df['Timestamp'] = df['Timestamp'].astype('datetime64[s]')
     df = df.set_index('Timestamp', drop=True)
     df.index = df.index.map(lambda x: x.replace(second=0))
-
+    
     ####################
     tmpdf = pd.DataFrame(df['cnrgA'].dropna())
     tmpdf['minutes'] = tmpdf.index.minute
     tmpdf['interv'] = tmpdf['minutes'].shift(-1) - tmpdf['minutes']
     interval = int(tmpdf['interv'].value_counts().argmax())
     del tmpdf
-
-    df.index = df.index.round(str(interval) + 'T')
+    
+    df.index = df.index.round(str(interval)+'T') 
+    
     df = fill_missing_values(df,interval)
     df['Timestamp'] = df.index
     df['total'] = df['cnrgA'] + df['cnrgB'] + df['cnrgC']
@@ -129,8 +130,9 @@ def conv_to_consumption(df):
 def find_nans(cnrg, energy, interval):
     # store starting points of NaNs
     
-
+    
     df_start = energy[((energy[cnrg].isnull()) & (energy[cnrg].shift().isnull() == False))]
+    
     if df_start.empty==False:
         
         if (np.isnan(energy[cnrg].iloc[0])==True):
@@ -255,15 +257,20 @@ def fill_nans(nrg, energy,interval):
             
             if ((energy[cnrg].isna().sum() == 1) & np.isnan(energy[cnrg].iloc[0])):
                 energy[cnrg].iloc[0] = energy[cnrg].iloc[1]
+                print('if')
                 
             else:
+                print('else')
                 df_start = find_nans(cnrg, energy,interval)
                 cur_status = df_start.shape[0]
+                
                 if ((df_start.empty==False) and (cur_status<prev_status)):
                     df_start.apply((lambda x: forwardfill(x, cnrg, energy,interval)), axis=1)
 
                 else:
-                    energy[cnrg] = energy[cnrg].interpolate(method = 'linear')
+                    print('sum of nans:',energy[cnrg].isna().sum())
+                    energy[cnrg] = energy[cnrg].ffill().bfill()
+                    print('sum of nans after:',energy[cnrg].isna().sum())
                 prev_status = cur_status
         print('forward fill ended')
 
@@ -313,7 +320,7 @@ def get_energy_data(start_date, end_date, devid, tmzn):
         if ((energy.cnrgA.isna().sum() > 0.6 * energy.shape[0]) | (energy.shape[0] < 7 * 24 * 60/interval)):
             print('Very few values!')
             energy = pd.DataFrame([])
-            interval = np.nan()
+            interval = np.nan
             return energy,r2,interval
         else:
 
