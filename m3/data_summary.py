@@ -28,7 +28,7 @@ def conv_to_consumption(df, interval,Amin,Bmin,Cmin):
     for nrg in energies:
         
         if nrg in df.columns:
-            df['diff'] = np.nan
+            #df['diff'] = np.nan
             if nrg=='Consumed energy (kWh) A':
                 firstdif = df[nrg].iloc[0]-Amin
             elif nrg=='Consumed energy (kWh) B':
@@ -37,15 +37,27 @@ def conv_to_consumption(df, interval,Amin,Bmin,Cmin):
                 firstdif = df[nrg].iloc[0]-Cmin
             else:
                 firstdif = 0
-            
+            #df.loc[df[nrg]>1000000000,nrg] = np.nan
+            tmp = df.copy()
+            tmp = tmp.dropna()
+            tmp['diff'] = np.nan
+            tmp['diff'] = tmp[nrg] - tmp[nrg].shift()
+            tmp = tmp[['diff']]
+            df = pd.concat([df,tmp],axis=1)
 
-            df.loc[((df[nrg].isna() == False) & (df[nrg].shift().isna() == False)),'diff'] = df[nrg] - df[nrg].shift()
+            #df.loc[((df[nrg].isna() == False) & (df[nrg].shift().isna() == False)),'diff'] = df[nrg] - df[nrg].shift()
+            
+            df.loc[df['diff']>100000000,['diff',nrg]] = np.nan
             df.loc[df['diff']<0, 'diff'] = df.loc[df['diff']<0, 'diff'].values+df.loc[df['diff'].shift(-1)<0,nrg].values
+            df.loc[np.abs(df['diff'])>100000000,['diff',nrg]] = np.nan
+			
+            #print(df.loc[np.abs(df['diff'])>100000000,['diff',nrg]])
             df['diff'].iloc[0] = firstdif
             
             df.drop([nrg], axis=1, inplace=True)
             df.rename(columns={"diff": nrg}, inplace = True)
-            df.loc[df[nrg]>100000000,nrg] = np.nan
+            
+            
             #df.drop([nrg], axis=1, inplace=True)
         
     
@@ -53,9 +65,10 @@ def conv_to_consumption(df, interval,Amin,Bmin,Cmin):
     if (('Consumed energy (kWh) A' in df.columns) and ('Consumed energy (kWh) B' in df.columns) and ('Consumed energy (kWh) C' in df.columns)):
         
         df['total'] = np.nan
-        df.loc[((df['Consumed energy (kWh) A'].isna() == False) | (df['Consumed energy (kWh) B'].isna() == False) | (
-                df['Consumed energy (kWh) C'].isna() == False)),'total'] = df['Consumed energy (kWh) A'] + df['Consumed energy (kWh) B'] + df['Consumed energy (kWh) C']
+        # df.loc[((df['Consumed energy (kWh) A'].isna() == False) | (df['Consumed energy (kWh) B'].isna() == False) | (
+                # df['Consumed energy (kWh) C'].isna() == False)),'total'] = df['Consumed energy (kWh) A'] + df['Consumed energy (kWh) B'] + df['Consumed energy (kWh) C']
         #df.total = df['Consumed energy (kWh) A'] + df['Consumed energy (kWh) B'] + df['Consumed energy (kWh) C']
+        df['total'] = df[['Consumed energy (kWh) A','Consumed energy (kWh) B','Consumed energy (kWh) C']].sum(axis=1)
         df.rename(columns={"total": "Total Consumed energy (kWh)"}, inplace = True)
         
 
@@ -86,19 +99,25 @@ def align_resample(df, interval,tmzn):
      #   df = fill_dropped_nrg(df, ['Consumed energy (kWh) A', 'Consumed energy (kWh) B', 'Consumed energy (kWh) C'],inter)	
  ###########################
     
-    if ('Consumed energy (kWh) A' in df.columns):  
+    if ('Consumed energy (kWh) A' in df.columns): 
+        # print(df.loc[(df['Consumed energy (kWh) A'] - df['Consumed energy (kWh) A'].shift())>100000,'Consumed energy (kWh) A'])
+        # df.loc[(df['Consumed energy (kWh) A'] - df['Consumed energy (kWh) A'].shift())>100000,'Consumed energy (kWh) A'] = np.nan
         Amin = df['Consumed energy (kWh) A'].min()
         if df.index[df['Consumed energy (kWh) A']==Amin][0]>df.index[0]:
             Amin = df['Consumed energy (kWh) A'].iloc[0]
     else:
         Amin = np.nan
-    if ('Consumed energy (kWh) B' in df.columns):  
+    if ('Consumed energy (kWh) B' in df.columns):
+        # print(df.loc[(df['Consumed energy (kWh) B'] - df['Consumed energy (kWh) B'].shift())>100000,'Consumed energy (kWh) B'])	
+        # df.loc[(df['Consumed energy (kWh) B'] - df['Consumed energy (kWh) B'].shift())>100000,'Consumed energy (kWh) B'] = np.nan
         Bmin = df['Consumed energy (kWh) B'].min()
         if df.index[df['Consumed energy (kWh) B']==Bmin][0]>df.index[0]:
             Bmin = df['Consumed energy (kWh) B'].iloc[0]
     else:
         Bmin = np.nan
-    if ('Consumed energy (kWh) C' in df.columns): 
+    if ('Consumed energy (kWh) C' in df.columns):
+        # print(df.loc[(df['Consumed energy (kWh) C'] - df['Consumed energy (kWh) C'].shift())>100000,'Consumed energy (kWh) C'])
+        # df.loc[(df['Consumed energy (kWh) C'] - df['Consumed energy (kWh) C'].shift())>100000,'Consumed energy (kWh) C'] = np.nan
         Cmin = df['Consumed energy (kWh) C'].min()
         if df.index[df['Consumed energy (kWh) C']==Cmin][0]>df.index[0]:
             Cmin = df['Consumed energy (kWh) C'].iloc[0]
@@ -128,10 +147,15 @@ def align_resample(df, interval,tmzn):
     
     
     # resample df to given interval 
-    if (('Consumed energy (kWh) A' in df.columns) and ('Consumed energy (kWh) B' in df.columns) and ('Consumed energy (kWh) C' in df.columns)):
-              
-          df_nrg = df.resample(res,label = side,closed = side).max().copy()
-          df_nrg = df_nrg[['Consumed energy (kWh) A','Consumed energy (kWh) B','Consumed energy (kWh) C']]
+    if (('Consumed energy (kWh) A' in df.columns) or ('Consumed energy (kWh) B' in df.columns) or ('Consumed energy (kWh) C' in df.columns)):
+          df = conv_to_consumption(df, interval,Amin,Bmin,Cmin)
+          df_nrg = df.resample(res,label = side,closed = side).sum().copy()
+		  
+          if (('Consumed energy (kWh) A' in df.columns) and ('Consumed energy (kWh) B' in df.columns) and ('Consumed energy (kWh) C' in df.columns)):
+            df_nrg = df_nrg[['Consumed energy (kWh) A','Consumed energy (kWh) B','Consumed energy (kWh) C','Total Consumed energy (kWh)']]
+          else:
+            df_nrg = df_nrg[['Consumed energy (kWh) A']]
+			
              
     if (('Average active power A (kW)' in df.columns) and ('Average active power C (kW)' in df.columns) and ('Average active power B (kW)' in df.columns)):
       df_demand = df.resample(res,label = side, closed = side).max().copy()
@@ -147,7 +171,10 @@ def align_resample(df, interval,tmzn):
       df.reset_index(inplace = True, drop = False)
       df.set_index('ts',inplace = True, drop = False)
     if (('Consumed energy (kWh) A' in df.columns) and ('Consumed energy (kWh) B' in df.columns) and ('Consumed energy (kWh) C' in df.columns)):
-      df = df.drop(['Consumed energy (kWh) A','Consumed energy (kWh) B','Consumed energy (kWh) C'],axis = 1)
+      df = df.drop(['Consumed energy (kWh) A','Consumed energy (kWh) B','Consumed energy (kWh) C','Total Consumed energy (kWh)'],axis = 1)
+      df = pd.concat([df,df_nrg], axis = 1)
+    elif ('Consumed energy (kWh) A' in df.columns):
+      df = df.drop(['Consumed energy (kWh) A'],axis = 1)
       df = pd.concat([df,df_nrg], axis = 1)
     
     
@@ -257,7 +284,7 @@ def read_data(devid, acc_token, address, start_time, end_time, interval, descrip
             
             
             [df,Amin,Bmin,Cmin,side] = align_resample(df, interval,tmzn)
-            df = conv_to_consumption(df, interval,Amin,Bmin,Cmin)
+            # df = conv_to_consumption(df, interval,Amin,Bmin,Cmin)
             
             
             for col in watt_div:
