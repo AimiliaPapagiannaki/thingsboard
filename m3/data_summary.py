@@ -38,7 +38,7 @@ def conv_to_consumption(df, interval,Amin,Bmin,Cmin):
             else:
                 firstdif = 0
             #df.loc[df[nrg]>1000000000,nrg] = np.nan
-            tmp = df.copy()
+            tmp = df[[nrg]].copy()
             tmp = tmp.dropna()
             tmp['diff'] = np.nan
             tmp['diff'] = tmp[nrg] - tmp[nrg].shift()
@@ -246,7 +246,7 @@ def read_data(devid, acc_token, address, start_time, end_time, interval, descrip
     mapping['scosC'] = 'SPower factor C'
     mapping['tmp'] = 'Temperature (Celsius)'
     mapping['clhmd'] = 'Humidity \%'
-    mapping['hmd'] = 'Humidity %'
+    mapping['hmd'] = 'Humidity \%'
     mapping['bindc'] = 'Motion'
        
     # watt_div is dictionary with descriptors to be divided by 1000
