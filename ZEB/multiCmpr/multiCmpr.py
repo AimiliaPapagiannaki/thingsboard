@@ -52,8 +52,19 @@ def conv_to_consumption(df, interval, Amin, Bmin, Cmin):
     if 'cnrgA' in df.columns:
         firstdif = df['cnrgA'].iloc[0] - Amin
         df['cnrgA'] = df['cnrgA'] / 1000
-        df['diffA'] = np.nan
-        df.diffA[((df.cnrgA.isna() == False) & (df.cnrgA.shift().isna() == False))] = df.cnrgA - df.cnrgA.shift()
+        #df['diffA'] = np.nan
+        #df.diffA[((df.cnrgA.isna() == False) & (df.cnrgA.shift().isna() == False))] = df.cnrgA - df.cnrgA.shift()
+        
+        
+        tmp = df[['cnrgA']].copy()
+        tmp = tmp.dropna()
+        print(tmp.head())
+        tmp['diffA'] = np.nan
+        tmp['diffA'] = tmp['cnrgA'] - tmp['cnrgA'].shift()
+        tmp = tmp[['diffA']]
+        
+        df = pd.concat([df,tmp],axis=1)
+        
         # df.diffA.iloc[0] = firstdif / 1000
         df.rename(columns={"diffA": "Consumed energy (kWh) A"}, inplace=True)
         df.drop(['cnrgA'], axis=1, inplace=True)
@@ -61,8 +72,18 @@ def conv_to_consumption(df, interval, Amin, Bmin, Cmin):
     if 'cnrgB' in df.columns:
         firstdif = df['cnrgB'].iloc[0] - Bmin
         df['cnrgB'] = df['cnrgB'] / 1000
-        df['diffB'] = np.nan
-        df.diffB[(df.cnrgB.isna() == False) & (df.cnrgB.shift().isna() == False)] = df.cnrgB - df.cnrgB.shift()
+        #df['diffB'] = np.nan
+        #df.diffB[(df.cnrgB.isna() == False) & (df.cnrgB.shift().isna() == False)] = df.cnrgB - df.cnrgB.shift()
+        
+        tmp = df[['cnrgB']].copy()
+        tmp = tmp.dropna()
+        print(tmp.head())
+        tmp['diffB'] = np.nan
+        tmp['diffB'] = tmp['cnrgB'] - tmp['cnrgB'].shift()
+        tmp = tmp[['diffB']]
+        
+        df = pd.concat([df,tmp],axis=1)
+        
         # df.diffB.iloc[0] = firstdif / 1000
         df.rename(columns={"diffB": "Consumed energy (kWh) B"}, inplace=True)
         df.drop(['cnrgB'], axis=1, inplace=True)
@@ -70,8 +91,18 @@ def conv_to_consumption(df, interval, Amin, Bmin, Cmin):
     if 'cnrgC' in df.columns:
         firstdif = df['cnrgC'].iloc[0] - Cmin
         df['cnrgC'] = df['cnrgC'] / 1000
-        df['diffC'] = np.nan
-        df.diffC[(df.cnrgC.isna() == False) & (df.cnrgC.shift().isna() == False)] = df.cnrgC - df.cnrgC.shift()
+        #df['diffC'] = np.nan
+        #df.diffC[(df.cnrgC.isna() == False) & (df.cnrgC.shift().isna() == False)] = df.cnrgC - df.cnrgC.shift()
+        
+        tmp = df[['cnrgC']].copy()
+        tmp = tmp.dropna()
+        print(tmp.head())
+        tmp['diffC'] = np.nan
+        tmp['diffC'] = tmp['cnrgC'] - tmp['cnrgC'].shift()
+        tmp = tmp[['diffC']]
+        
+        df = pd.concat([df,tmp],axis=1)
+        
         # df.diffC.iloc[0] = firstdif / 1000
         df.rename(columns={"diffC": "Consumed energy (kWh) C"}, inplace=True)
         df.drop(['cnrgC'], axis=1, inplace=True)
@@ -79,12 +110,10 @@ def conv_to_consumption(df, interval, Amin, Bmin, Cmin):
     if (('Consumed energy (kWh) A' in df.columns) and ('Consumed energy (kWh) B' in df.columns) and (
             'Consumed energy (kWh) C' in df.columns)):
         df['total'] = np.nan
-        df.total[(df['Consumed energy (kWh) A'].isna() == False) & (df['Consumed energy (kWh) B'].isna() == False) & (
-                df['Consumed energy (kWh) C'].isna() == False)] = df['Consumed energy (kWh) A'] + df[
-            'Consumed energy (kWh) B'] + df['Consumed energy (kWh) C']
+        df['total'] = df['Consumed energy (kWh) A'] + df['Consumed energy (kWh) B'] + df['Consumed energy (kWh) C']   
         df.rename(columns={"total": "Total Consumed energy (kWh)"}, inplace=True)
         df = df[["Total Consumed energy (kWh)"]]
-        
+   
         #df.loc[df["Total Consumed energy (kWh)"]<0,"Total Consumed energy (kWh)"] = np.nan 
     df = df.iloc[1:]
     #print(df.head(10))
@@ -107,17 +136,20 @@ def align_resample(df, interval, tmzn):
     df['ts'] = df['ts'].dt.tz_localize('utc').dt.tz_convert(tmzn)
     df.reset_index(drop=True, inplace=True)
     df.set_index('ts', inplace=True, drop=True)
-
+    
     #resample at given interval to round timestamp
     res = int(interval)/1000
     
     if int(interval)==86400000:
         print('daily')
-        df = df.resample('D').max()
+        df = df.resample('D', label='left').max()
     else:
-        df = df.resample(str(res)+'S').max()
+        df = df.resample(str(res)+'S', label='left').max()
    
-  
+    if int(interval)==3960000:
+        df.index = df.index - timedelta(minutes=12)
+    print(df.head())
+    #df.to_csv('test_cnrg.csv')
     Amin=np.nan
     Bmin = np.nan
     Cmin = np.nan
@@ -303,6 +335,7 @@ def main(argv):
                 #devName = devName[:30]
           descriptors = devargs[2]
           start_time = str(int(devargs[3]) - int(interval))
+          print('start time is:',start_time)
           end_time = devargs[4]
           #devName = devName+str(i)
           print('devname:',devName)
