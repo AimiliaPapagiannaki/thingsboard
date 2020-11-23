@@ -20,6 +20,7 @@ import calendar
 import matplotlib.pyplot as plt
 import seaborn as sns
 
+import calendar
 import smtplib
 from email.message import EmailMessage
 from email.mime.text import MIMEText
@@ -36,7 +37,7 @@ def conv_to_consumption(df, interval,Amin,Bmin,Cmin):
     
     energies = ['Consumed energy (kWh) A','Consumed energy (kWh) B','Consumed energy (kWh) C','Estimated consumed energy (kWh) A','Estimated consumed energy (kWh) B','Estimated consumed energy (kWh) C']
     mins = [Amin,Bmin,Cmin]
-    print(mins)
+    
     for nrg in energies:
         
         if nrg in df.columns:
@@ -117,7 +118,7 @@ def align_resample(df, interval,tmzn):
         
         tmp = df[['Consumed energy (kWh) A']].copy()
         tmp.dropna(inplace=True)
-        print(tmp.head())
+        
         Amin = tmp['Consumed energy (kWh) A'].min()
         if tmp.index[tmp['Consumed energy (kWh) A']==Amin][0]>tmp.index[0]:
             Amin = tmp['Consumed energy (kWh) A'].iloc[0]
@@ -222,7 +223,6 @@ def read_data(devid, acc_token, address, start_time, end_time, interval, descrip
     
     descriptors = descriptors.split(",")
     descriptors = [x for x in descriptors if x in r1]
-    print('descriptors:',descriptors)
     
     for est in estimated.keys():
         if est in descriptors:descriptors.append(estimated[est])
@@ -279,7 +279,7 @@ def read_data(devid, acc_token, address, start_time, end_time, interval, descrip
     
     r2 = requests.get(url=address + "/api/plugins/telemetry/DEVICE/" + devid + "/values/timeseries?keys="+descriptors+"&startTs=" + start_time + "&endTs=" + end_time + "&agg=NONE&limit=1000000",
         headers={'Content-Type': 'application/json', 'Accept': '*/*', 'X-Authorization': acc_token}).json()
-    print("keys length ",len(r2.keys()))
+   
     if ((len(r2.keys())>0) & (len(descriptors)>0)):
         df = pd.DataFrame([])
         
@@ -384,8 +384,104 @@ def send_email(email_recipient, email_subject, email_message, attachment_locatio
     except:
         print("SMPT server connection error")
     return True
-  
     
+    
+    
+  
+def pull_occupancy(acc_token, address,start_time,end_time,assetid):
+    r3 = requests.get(
+        url= address + "/api/plugins/telemetry/ASSET/"+ assetid +"/values/timeseries?keys=occupancy&startTs=" + start_time + "&endTs=" + end_time + "&agg=NONE&limit=1000000",
+        headers={'Content-Type': 'application/json', 'Accept': '*/*', 'X-Authorization': acc_token}).json()
+    
+    df =  pd.DataFrame(r3['occupancy'])
+     
+    # Transform each row to dictionary and concatenate
+    dictlist = []
+    for i in range(0,df.shape[0]):
+        globals()['d%s' % i] = dict(x.split(":") for x in df['value'].iloc[i].split(","))
+        dictlist.append(globals()['d%s' % i])
+    
+    d = {}
+    for k in d0.keys():
+        d[k] = tuple(d[k] for d in dictlist)
+    ndf = pd.DataFrame.from_dict(d)
+    
+    
+    df = pd.concat([df,ndf],axis=1)
+    df.drop('value',axis=1,inplace=True)
+    
+    
+    df['ts'] = pd.to_datetime(df['ts'], unit='ms')
+    df['ts'] = df['ts'].dt.tz_localize('utc').dt.tz_convert('Europe/Athens')
+    
+
+    # Set timestamp as index, convert all columns to float
+    df = df.sort_values(by=['ts'])
+    df.reset_index(drop=True, inplace=True)
+    df.set_index('ts',inplace = True, drop = True)
+    for col in df.columns:
+        df[col] = df[col].astype('float')
+    
+    df['Total'] = df.sum(axis=1) 
+    df = df.iloc[:-1]
+    
+    
+    return df
+    
+    
+def nrg_occ(df,occ):
+
+    df = df[['Total Consumed energy (kWh)']]
+    df = df.resample('1M',label='right').sum()
+    occ = occ.resample('1M',label='right').sum()
+    df = pd.concat([df,occ],axis=1)
+    df['Energy per room'] = df['Total Consumed energy (kWh)']/df['Total']
+    
+    
+    fig = plt.figure(figsize=[7.5,5])
+    plt.plot([calendar.month_name[month] for month in df.index.month],df['Energy per room'], color='c', marker='o')
+    
+    plt.title('Monthly energy per room index')
+    plt.xlabel('Date')
+    plt.ylabel('kWh/room')
+    fig.tight_layout()
+    fig.savefig('energy_room.png')
+    #print(df)
+    
+
+    
+def EnPis(dftotal, dfair, occ):
+    rows = ['Total occupancy','Average daily occupancy','Total consumption per occupied room','Air Condition consumption per occupied room','Total consumption per sq.meter','Air condition consumption per sq.meter','Energy cost per occupied room']
+    enpi_list = []
+    
+    totalOcc = occ['Total'].sum()
+    totalnrg = dftotal['Total Consumed energy (kWh)'].sum()
+    totalair = dfair['Total Consumed energy (kWh)'].sum()
+    kwval = 0.12
+    sqm = 5258.54
+    
+    enpi_list.append([totalOcc])
+    enpi_list.append([round(totalOcc/occ.shape[0],2)])
+    enpi_list.append([round(totalnrg/totalOcc,2)])
+    enpi_list.append([round(totalair/totalOcc,2)])
+    enpi_list.append([round(totalnrg/sqm,2)])
+    enpi_list.append([round(totalair/sqm,2)])
+    enpi_list.append([round(totalnrg*kwval/totalOcc,2)])
+    columns = ['EnPis']
+    
+    fig = plt.figure(figsize=(12,5))
+    ax1 = plt.subplot(aspect='equal')
+    ax1.axis('off')
+    colors = plt.cm.GnBu(np.linspace(0, 0.8, len(rows)))
+    t= ax1.table(cellText=enpi_list, colLabels=columns, rowLabels=rows, loc='center', cellLoc ='center', colLoc='center', rowColours=colors,colWidths=[0.4])
+    t.auto_set_font_size(False) 
+    t.set_fontsize(10)
+    
+    fig.tight_layout()
+    fig.savefig('EnPis.png')
+    
+    
+    return
     
     
 def daily_stats(df,label,color):
@@ -409,6 +505,46 @@ def daily_stats(df,label,color):
     
     fig.tight_layout()
     fig.savefig('dailyStats_'+str(label)+'.png')
+    
+    
+    maxpwr = df.loc[df['Total Average active power (kW)'] == df['Total Average active power (kW)'].max(),'Total Average active power (kW)']
+    minpwr =df.loc[df['Total Average active power (kW)'] == df['Total Average active power (kW)'].min(),'Total Average active power (kW)']
+    stats = pd.DataFrame(pd.concat([maxpwr,minpwr]))
+    avgpwr = df['Total Average active power (kW)'].mean()
+    
+    fig = plt.figure()
+    ax1 = plt.subplot(aspect='equal')
+    ax1.axis('off')
+    #ax1.axis('tight')
+    #t= axs[0].table(cellText=sum_nrg.round(decimals=2).values, colWidths = [0.5]*len(sum_nrg.columns),  colLabels=sum_nrg.columns,  loc='center')
+    colors = plt.cm.BuGn(np.linspace(0, 0.5, len(dftmp.index)))
+    t= ax1.table(cellText=stats.round(decimals=2).values, colLabels=stats.columns, rowLabels=stats.index.date, loc='center', cellLoc ='center', colLoc='center', colWidths=[0.6 for x in dftmp.columns], rowColours=colors,colColours=['c'])
+    t.auto_set_font_size(False) 
+    t.set_fontsize(10)
+    fig.tight_layout()
+    fig.savefig('monthlyStats_'+str(label)+'.png')
+    
+
+def MaxPwr(df,label):
+    dftmp = df[['Total Average active power (kW)']].copy()
+    dftmp = dftmp.resample('1H').mean()
+
+    dftmp = dftmp.sort_values(by = ['Total Average active power (kW)'],ascending=False)
+    dftmp = dftmp.iloc[:10]
+    dftmp.columns = ['Maximum '+str(label)+' hourly power (kW)']
+    
+    fig = plt.figure(figsize=(12,5))
+    ax1 = plt.subplot(aspect='equal')
+    ax1.axis('off')
+    colors = plt.cm.Spectral_r(np.linspace(0, 0.5, len(dftmp.index)))
+    t= ax1.table(cellText=dftmp.round(decimals=2).values, colLabels=dftmp.columns, rowLabels=dftmp.index, loc='center', cellLoc ='center', colLoc='center', colWidths=[0.8 for x in dftmp.columns],rowColours=colors,colColours=['tab:purple'])
+    t.auto_set_font_size(False) 
+    t.set_fontsize(10)
+    
+    fig.tight_layout()
+    fig.savefig('10maxPwr_'+str(label)+'.png')
+    
+    
         
     
 def plot_energy_for_each_day(df,label,color):
@@ -422,13 +558,13 @@ def plot_energy_for_each_day(df,label,color):
     plt.xlabel('Days of month')
     plt.ylabel('Energy [kWh]')
     plt.xticks(df.index.day)
-    plt.title('Daily energy consumption during ' + month)
+    plt.title(str(label)+' consumption during ' + month)
     fig.tight_layout()
     plt.savefig('monthly_'+str(label)+'.png')
     return month
     
-def box_plots(df,label):
-
+def box_plots(tmp,label):
+    df = tmp.copy()
     df['day'] = df.index.to_period('D')
 
     fig,ax = plt.subplots()
@@ -437,9 +573,10 @@ def box_plots(df,label):
     #fig.tight_layout()
     #plt.savefig('boxplot_'+str(label)+'.png')
     
-    
-    fig.set_size_inches((15,8))
-    bplot = sns.boxplot(x='day',y='Total Average active power (kW)',data=df,ax=ax)
+    df.rename(columns={'Total Average active power (kW)':'Active power (kW)'},inplace=True)
+    fig.set_size_inches((10,7))
+    bplot = sns.boxplot(x='day',y='Active power (kW)',data=df,ax=ax)
+    ax.set_title('Boxplot of '+str(label)+' active power')
     ax.set_xticklabels(ax.get_xticklabels(),rotation=30)
     bplot.figure.savefig('boxplot_'+str(label)+'.png')
     #bplot = sns.boxplot(y='Total Average active power (kW)', x='day',data=df,width=0.5, palette="colorblind")
@@ -540,6 +677,7 @@ def main(argv):
     # input arguments
     entityName = str(argv[1])
     entityID = str(argv[2])
+    asset_id = 'ed73a120-f73b-11e9-b4dc-013e65d2f65e'
     
     interval = '5'
     descriptors = 'pwrA,pwrB,pwrC,cnrgA,cnrgB,cnrgC'
@@ -581,6 +719,10 @@ def main(argv):
     r1 = requests.get(url=address + '/api/relations/info?fromId=' + entityID + '&fromType=ASSET',
                       headers={'Content-Type': 'application/json', 'Accept': '*/*',
                                'X-Authorization': acc_token}).json()
+                               
+    # Read occupancy for each day
+    occ = pull_occupancy(acc_token, address,start_time,end_time,asset_id)
+    
     
     sum_nrg = pd.DataFrame([])
     for device in r1:
@@ -599,20 +741,37 @@ def main(argv):
             sum_nrg = sum_nrg.append(new_row, ignore_index = True)
             
             if label=='Moxy - Total Energy Consumption':
+                dftotal = summary.copy()
                 color = 'cornflowerblue'
                 heatmap_nrg(summary)
                 label = 'Total'
                 plot_energy_for_each_day(summary,label,color)
+                print(summary.head())
                 box_plots(summary,label)
                 daily_stats(summary,label,color)
+                MaxPwr(summary,label)
+                
             if label=='Moxy - Air Condition Energy Consumption':
+                dfair = summary.copy()
                 color = 'green'
                 label = 'AirCondition'
                 plot_energy_for_each_day(summary,label,color)
                 box_plots(summary,label)
                 daily_stats(summary,label,color)
+                MaxPwr(summary,label)
+    EnPis(dftotal,dfair,occ)
 
     plot_pie(sum_nrg)
+    
+    # retrieve consumption and occupancy data from June
+    devid = '29b46ec0-42a1-11ea-8762-6bf954fc5af1'
+    start_time = str(1593550800000 - int(interval)*60000)
+    [df,side] = read_data(devid,acc_token,address, start_time, end_time, interval, 'cnrgA,cnrgB,cnrgC',tmzn)
+    occ = pull_occupancy(acc_token, address,start_time,end_time,asset_id)
+    
+    # plot line chart for these months
+    nrg_occ(df,occ)
+    
     ## send email to recipient
     #sbj =  'Monthly data export'
     #msg = 'Attached you can find the previous month\'s energy consumption measurements. \n\n Respectfully,\n Meazon team'
