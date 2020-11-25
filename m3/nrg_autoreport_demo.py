@@ -1,4 +1,5 @@
 import sys
+
 import pandas as pd
 import datetime
 import time
@@ -14,7 +15,14 @@ from dateutil.tz import gettz
 import timeit
 #from datetime import datetime
 from datetime import timedelta
+import warnings
 
+def fxn():
+    warnings.warn("deprecated", DeprecationWarning)
+
+with warnings.catch_warnings():
+    warnings.simplefilter("ignore")
+    fxn()
 
 ### Definitions of functions to download and manipulate energy data
 def download_nrg(start_date, end_date, devid, tmzn):
@@ -60,7 +68,7 @@ def download_nrg(start_date, end_date, devid, tmzn):
         df.columns = ['Timestamp', 'cnrgA', 'cnrgB', 'cnrgC']
     else:
         df = pd.DataFrame([])
-        print('Empty json!')
+        #print('Empty json!')
 
     return df,r2
 
@@ -74,7 +82,7 @@ def fill_missing_values(df,interval):
     end_date = df.index[-1]
     idx = pd.date_range(start_date, end_date, freq=str(interval)+'T')
     df = df.reindex(idx)
-    print(df.info())
+    
 
     return df
 
@@ -106,24 +114,58 @@ def create_nrg_table(df):
     return [df,interval]
 
 
-def conv_to_consumption(df):
+def conv_to_consumption(df,cnrg):
     #     convert cumulative energy to consumed energy
+    #df['diffA'] = np.nan
+    #df['diffB'] = np.nan
+    #df['diffC'] = np.nan
+    
+    
+    tmp = df.copy()
+    tmp = tmp.dropna()
+    tmp['diffA'] = np.nan
+    tmp['diffA'] = tmp['cnrgA'] - tmp['cnrgA'].shift()
+    tmp = tmp[['diffA']]
+    df = pd.concat([df,tmp],axis=1)
+    df.loc[df['diffA']<0, 'diffA'] = df.loc[df['diffA']<0, 'diffA'].values+df.loc[df['diffA'].shift(-1)<0,'cnrgA'].values
+    #print('MAX DIFFa:',df['diffA'].max())
+    df.loc[df['diffA']>1000000,'diffA'] = np.nan
+    
+    tmp = df.copy()
+    tmp = tmp.dropna()
+    tmp['diffB'] = np.nan
+    tmp['diffB'] = tmp['cnrgB'] - tmp['cnrgB'].shift()
+    tmp = tmp[['diffB']]
+    df = pd.concat([df,tmp],axis=1)
+    df.loc[df['diffB']<0, 'diffB'] = df.loc[df['diffB']<0, 'diffB'].values+df.loc[df['diffB'].shift(-1)<0,'cnrgB'].values
+    #print('MAX DIFFB:',df['diffB'].max())
+    df.loc[df['diffB']>1000000,'diffB'] = np.nan
+    
+    tmp = df.copy()
+    tmp = tmp.dropna()
+    tmp['diffC'] = np.nan
+    tmp['diffC'] = tmp['cnrgC'] - tmp['cnrgC'].shift()
+    tmp = tmp[['diffC']]
+    df = pd.concat([df,tmp],axis=1)
+    df.loc[df['diffC']<0, 'diffC'] = df.loc[df['diffC']<0, 'diffC'].values+df.loc[df['diffC'].shift(-1)<0,'cnrgC'].values
+    #print('MAX DIFFC:',df['diffC'].max())
+    df.loc[df['diffC']>1000000,'diffC'] = np.nan
+        
+    
 
-    df['diffA'] = np.nan
-    df['diffB'] = np.nan
-    df['diffC'] = np.nan
-    df.diffA[((df.cnrgA.isna() == False) & (df.cnrgA.shift().isna() == False))] = df.cnrgA - df.cnrgA.shift()
-    df.diffB[(df.cnrgB.isna() == False) & (df.cnrgB.shift().isna() == False)] = df.cnrgB - df.cnrgB.shift()
-    df.diffC[(df.cnrgC.isna() == False) & (df.cnrgC.shift().isna() == False)] = df.cnrgC - df.cnrgC.shift()
+    #df.diffA[((df.cnrgA.isna() == False) & (df.cnrgA.shift().isna() == False))] = df.cnrgA - df.cnrgA.shift()
+    #df.diffB[(df.cnrgB.isna() == False) & (df.cnrgB.shift().isna() == False)] = df.cnrgB - df.cnrgB.shift()
+    #df.diffC[(df.cnrgC.isna() == False) & (df.cnrgC.shift().isna() == False)] = df.cnrgC - df.cnrgC.shift()
 
     df.diffA.iloc[0] = 0
     df.diffB.iloc[0] = 0
     df.diffC.iloc[0] = 0
-
+    
     df['total'] = np.nan
-    df.total[(df.diffA.isna() == False) & (df.diffB.isna() == False) & (
-                df.diffC.isna() == False)] = df.diffA + df.diffB + df.diffC
-
+    df['total'] = df.diffA + df.diffB + df.diffC
+    
+    
+    
     return df
 
 
@@ -214,7 +256,8 @@ def forwardfill(row, cnrg, energy,interval):
                         row.previous_dt + timedelta(minutes=i*interval - interval)]
 
         else:
-            energy[cnrg] = energy[cnrg].interpolate(method = 'linear')
+            #energy[cnrg] = energy[cnrg].interpolate(method = 'linear')
+            energy[cnrg] = energy[cnrg].ffill().bfill()
 
 
     else:
@@ -242,7 +285,7 @@ def forwardfill(row, cnrg, energy,interval):
                     energy[cnrg].loc[row.previous_dt + timedelta(minutes=i*interval)] = energy[cnrg].loc[
                         row.previous_dt + timedelta(minutes=i*interval - interval)]
         else:
-            energy[cnrg] = energy[cnrg].interpolate(method = 'linear')
+            energy[cnrg] = energy[cnrg].ffill().bfill()
 
 
 def fill_nans(nrg, energy,interval):
@@ -257,10 +300,10 @@ def fill_nans(nrg, energy,interval):
             
             if ((energy[cnrg].isna().sum() == 1) & np.isnan(energy[cnrg].iloc[0])):
                 energy[cnrg].iloc[0] = energy[cnrg].iloc[1]
-                print('if')
+                
                 
             else:
-                print('else')
+                
                 df_start = find_nans(cnrg, energy,interval)
                 cur_status = df_start.shape[0]
                 
@@ -268,9 +311,9 @@ def fill_nans(nrg, energy,interval):
                     df_start.apply((lambda x: forwardfill(x, cnrg, energy,interval)), axis=1)
 
                 else:
-                    print('sum of nans:',energy[cnrg].isna().sum())
+                    
                     energy[cnrg] = energy[cnrg].ffill().bfill()
-                    print('sum of nans after:',energy[cnrg].isna().sum())
+                    
                 prev_status = cur_status
         print('forward fill ended')
 
@@ -302,7 +345,7 @@ def correct_dropped(row, cnrg, df,interval):
 
 
 def get_energy_data(start_date, end_date, devid, tmzn):
-    print('Downloading cumulative energy...')
+    #print('Downloading cumulative energy...')
 
     
     [dfcnrg,r2] = download_nrg(start_date, end_date, devid, tmzn)
@@ -318,40 +361,42 @@ def get_energy_data(start_date, end_date, devid, tmzn):
         
         
         if ((energy.cnrgA.isna().sum() > 0.6 * energy.shape[0]) | (energy.shape[0] < 7 * 24 * 60/interval)):
-            print('Very few values!')
+            #print('Very few values!')
             energy = pd.DataFrame([])
             interval = np.nan
             return energy,r2,interval
         else:
 
-            print('Correcting energy dropdowns')
+            #print('Correcting energy dropdowns')
             energy = fill_dropped_nrg(energy, nrg,interval)
 
-            print('Filling missing values')
-            energy = conv_to_consumption(energy)
-            thresA = energy.diffA.mean() + 3 * energy.diffA.std()
-            thresB = energy.diffB.mean() + 3 * energy.diffB.std()
-            thresC = energy.diffC.mean() + 3 * energy.diffC.std()
+            #print('Filling missing values')
+            energy = conv_to_consumption(energy,nrg)
+            #thresA = energy.diffA.mean() + 3 * energy.diffA.std()
+            #thresB = energy.diffB.mean() + 3 * energy.diffB.std()
+            #thresC = energy.diffC.mean() + 3 * energy.diffC.std()
 
-            energy.cnrgA[energy.diffA.shift(-1) > thresA] = np.nan
-            energy.cnrgB[energy.diffB.shift(-1) > thresB] = np.nan
-            energy.cnrgC[energy.diffC.shift(-1) > thresC] = np.nan
+            #energy.cnrgA[energy.diffA.shift(-1) > thresA] = np.nan
+            #energy.cnrgB[energy.diffB.shift(-1) > thresB] = np.nan
+            #energy.cnrgC[energy.diffC.shift(-1) > thresC] = np.nan
 
-            energy = conv_to_consumption(energy)
-            fill_nans(nrg, energy,interval)
-            energy = conv_to_consumption(energy)
+            #energy = conv_to_consumption(energy)
+            #fill_nans(nrg, energy,interval)
+            #energy.drop(['diffA','diffB','diffC'],axis=1,inplace=True)
+            #energy = conv_to_consumption(energy,nrg)
           
             energy['Timestamp'] = energy['Timestamp'].dt.tz_localize('utc').dt.tz_convert(tmzn)
             energy.set_index('Timestamp',inplace = True,drop = False)
 
             energy.drop(['cnrgA', 'cnrgB', 'cnrgC', 'Timestamp'], axis=1, inplace=True)
+            
             energy.columns = ['totalnrg', 'nrgA', 'nrgB', 'nrgC']
             energy.nrgA = energy.nrgA / 1000
             energy.nrgB = energy.nrgB / 1000
             energy.nrgC = energy.nrgC / 1000
             energy.totalnrg = energy.totalnrg / 1000
 
-            print('Energy df has successfully been created')
+            #print('Energy df has successfully been created')
             return energy,r2,interval
 
 
@@ -446,7 +491,7 @@ def create_power_table(dfpwr,interval):
     dfpwr = dfpwr.reset_index(drop=True)
 
     dfpwr = dfpwr.replace(0.0, np.nan)
-    dfpwr = dfpwr.interpolate(method='linear', axis=0)
+    #dfpwr = dfpwr.interpolate(method='linear', axis=0)
 
     dfpwr = dfpwr.replace(0.000001, 0.0)
     dfpwr['total'] = dfpwr['pwrA'] + dfpwr['pwrB'] + dfpwr['pwrC']
@@ -542,7 +587,7 @@ def download_data(start_date, end_date, devid, assetid, r2, tmzn,interval):
     df = df.reindex(date_indices)
     df.reset_index(drop=False, inplace=True)
     df.rename(columns={"index": "Timestamp"}, inplace=True)
-    df = impute_consumption_data(df,interval)
+    #df = impute_consumption_data(df,interval)
     df['Timestamp'] = pd.to_datetime(df['Timestamp'], format='%Y/%m/%d %H:%M:%S.%f')
     df = df.sort_values(by="Timestamp")
 
@@ -550,7 +595,7 @@ def download_data(start_date, end_date, devid, assetid, r2, tmzn,interval):
 
 
     if len(r3) != 0:
-      print('Temperature not empty')
+      #print('Temperature not empty')
       dfT = pd.DataFrame(r3['tmp'])  
       dfT.set_index('ts', inplace=True)
       dfT.columns = ['tmp']
@@ -605,7 +650,10 @@ def plot_energy_for_each_day(df):
 def plot_month_statistics(dataset) :
     dataset['Timestamp'] = pd.to_datetime(dataset['Timestamp'])
     dataset = dataset.set_index('Timestamp')
-    dataset.resample("1H").agg({'totalnrg':'sum','nrgA':'sum','nrgB':'sum','nrgC':'sum','working_day':'mean','hour':'mean','label':'mean'})
+    
+    
+    dataset = dataset.resample("1H").agg({'totalnrg':'sum','nrgA':'sum','nrgB':'sum','nrgC':'sum','working_day':'mean','hour':'mean','label':'mean'})
+    
     dataset = dataset.reset_index(drop=False)
     month = calendar.month_name[dataset.Timestamp[0].month]
     arrays = [['Day with maximum energy', 'Day with minimum energy',
@@ -624,9 +672,9 @@ def plot_month_statistics(dataset) :
     else:
         df_table.iloc[1]['Value [kWh]'] = round(dataset.loc[dataset.label == 2].totalnrg.sum(), 2)
 
-    df_table.iloc[2]['Value [kWh]'] = round(max(dataset.totalnrg), 2)
+    df_table.iloc[2]['Value [kWh]'] = round(dataset['totalnrg'].max(), 2)
     dataset_for_min = dataset.loc[dataset.index != dataset['totalnrg'].idxmin()]
-    df_table.iloc[3]['Value [kWh]'] = round(min(dataset_for_min.totalnrg), 2)
+    df_table.iloc[3]['Value [kWh]'] = round(dataset_for_min['totalnrg'].min(), 2)
 
     if (dataset.loc[dataset.label == 1].totalnrg.sum() > dataset.loc[dataset.label == 3].totalnrg.sum()):
         df_table = df_table.set_value('Day with maximum energy', 'Date',
@@ -689,7 +737,7 @@ def energy_of_working_day_with_maximum_consumption(df):
     df.reset_index(drop = False, inplace = True)
     fig, ax = plt.subplots(figsize=(7.5, 5.0))
     ax = plt.subplot(111)
-    plt.bar(df.Timestamp.dt.hour, df.totalnrg,color = 'g')
+    plt.bar(df.Timestamp.dt.hour, df.totalnrg,color = 'g',alpha=0.5)
     plt.xlabel('Hours of day')
     plt.ylabel('Energy [kWh]')
     plt.xticks(df.Timestamp.dt.hour)
@@ -705,7 +753,7 @@ def energy_of_working_day_with_minimum_consumption(df):
     df.reset_index(drop = False, inplace = True)
     fig, ax = plt.subplots(figsize=(7.5, 5.0))
     ax = plt.subplot(111)
-    plt.bar(df.Timestamp.dt.hour, df.totalnrg, color ='g')
+    plt.bar(df.Timestamp.dt.hour, df.totalnrg, color ='g',alpha=0.5)
     plt.xlabel('Hours of day')
     plt.ylabel('Energy [kWh]')
     plt.xticks(df.Timestamp.dt.hour)
@@ -721,7 +769,7 @@ def energy_of_weekend_with_maximum_consumption(df):
     df.reset_index(drop = False, inplace = True)
     fig, ax = plt.subplots(figsize=(7.5, 5.0))
     ax = plt.subplot(111)
-    plt.bar(df.Timestamp.dt.hour, df.totalnrg,color = 'purple')
+    plt.bar(df.Timestamp.dt.hour, df.totalnrg,color = 'purple',alpha=0.5)
     plt.xlabel('Hours of day')
     plt.ylabel('Energy [kWh]')
     plt.xticks(df.Timestamp.dt.hour)
@@ -737,24 +785,28 @@ def energy_of_weekend_with_minimum_consumption(df):
     df.reset_index(drop = False, inplace = True)
     fig, ax = plt.subplots(figsize=(7.5, 5.0))
     ax = plt.subplot(111)
-    plt.bar(df.Timestamp.dt.hour, df.totalnrg,color = 'purple')
+    plt.bar(df.Timestamp.dt.hour, df.totalnrg,color = 'purple',alpha=0.5)
     plt.xlabel('Hours of day')
     plt.ylabel('Energy [kWh]')
     plt.xticks(df.Timestamp.dt.hour)
     plt.title('Weekend day with minimum consumption')
     plt.savefig('energy_of_weekend_with_minimum_consumption.png')
 
-def plot_energy_for_the_whole_month(df) :
+def plot_demand_power(df) :
+
+    df = df.resample('15T').mean()
+    #df.reset_index(drop = True, inplace = True)
+    #print('DEMAND POWER ',df.head())
     fig, ax = plt.subplots(figsize=(7.5, 5.0))
-    x = df.Timestamp
+    x = df.index
     plt.setp( ax.xaxis.get_majorticklabels(), rotation=45)
-    plt.plot(x, df.totalnrg,'c')
+    plt.plot(x, df.total,'tab:purple')
 
     plt.xlabel('Date')
-    plt.ylabel('Energy [kWh]')
-    plt.title('Per-minute energy consumption of month')
+    plt.ylabel('Active power [kW]')
+    plt.title('Average active power per 15-minutes')
     fig.tight_layout()
-    plt.savefig('plot_energy_for_the_whole_month.png')
+    plt.savefig('plot_demand_power.png')
 
 
 def plot_energy_and_temperature(df, tmzn):
@@ -777,9 +829,9 @@ def plot_energy_and_temperature(df, tmzn):
     ax2 = ax1.twinx()  # instantiate a second axes that shares the same x-axis
 
     color = 'tab:cyan'
-    print('timezone find:', tmzn.find('US/'))
+    #print('timezone find:', tmzn.find('US/'))
     if tmzn.find('US/')>= 0:
-      print('timezone find:', tmzn.find('US/'))
+      #print('timezone find:', tmzn.find('US/'))
       df2['tmp'] = df2['tmp']*1.8+32
       ax2.set_ylabel('Temperature (Fahrenheit)', color=color)  # we already handled the x-label with ax1
     else:
@@ -790,7 +842,49 @@ def plot_energy_and_temperature(df, tmzn):
     plt.title('Daily energy consumption & mean daily temperature')
     fig.tight_layout()
     plt.savefig('plot_energy_and_temperature.png')
+    
 
+def plot_histA(df):
+    fig, ax = plt.subplots(figsize=(7.5, 5.0))
+    x = df.index
+    plt.setp( ax.xaxis.get_majorticklabels())
+    #plt.hist(x, df.total,'tab:purple')
+    ax = df['pwrA'].hist(bins=20,alpha=0.3,color = 'tab:orange')
+
+    plt.xlabel('kW')
+    plt.ylabel('Number of samples')
+    plt.title('Per-minute active power A')
+    fig.tight_layout()
+    plt.savefig('plot_histA.png')
+
+
+def plot_histB(df):
+    fig, ax = plt.subplots(figsize=(7.5, 5.0))
+    x = df.index
+    plt.setp( ax.xaxis.get_majorticklabels())
+    #plt.hist(x, df.total,'tab:purple')
+    ax = df['pwrB'].hist(bins=20,alpha=0.3,color = 'tab:purple')
+
+    plt.xlabel('kW')
+    plt.ylabel('Number of samples')
+    plt.title('Per-minute active power B')
+    fig.tight_layout()
+    plt.savefig('plot_histB.png')
+    
+def plot_histC(df):
+    fig, ax = plt.subplots(figsize=(7.5, 5.0))
+    x = df.index
+    plt.setp( ax.xaxis.get_majorticklabels())
+    #plt.hist(x, df.total,'tab:purple')
+    ax = df['pwrC'].hist(bins=20,alpha=0.3,color = 'tab:green')
+
+    plt.xlabel('kW')
+    plt.ylabel('Number of samples')
+    plt.title('Per-minute active power C')
+    fig.tight_layout()
+    plt.savefig('plot_histC.png')
+    
+    
 class FPDF(FPDF):
     # Page footer
     def footer(self):
@@ -807,9 +901,10 @@ class FPDF(FPDF):
         self.image('meazon.png', x=10, y=None, w=30, h=10)
 
 
-def create_pdf(path, filename, max_power, total_energy, month_Name, building_name):
+def create_pdf(path, filename, max_power, total_energy, month_Name,interval):
+    
     pdf = FPDF()
-
+    
     pdf.add_page()
     pdf.set_xy(20, 20)
     pdf.set_font('arial', 'B', 16)
@@ -820,40 +915,23 @@ def create_pdf(path, filename, max_power, total_energy, month_Name, building_nam
     #pdf.cell(0,10, "(Nosokomeio_Rio)", 0, 1, 'C')
     str9 = " "
     pdf.write(5, str9)
-    try :
-      pdf.image("epri_photos/"+building_name+".png", x=10, y=None, w=180, h=120, type='', link='')
-      pdf.cell(0, 10, "\n", 0, 1, 'C')
-      pdf.write(5, str9)
-      pdf.set_xy(10, 160)
-      str10 = "\nMaximum active power (kW) : " + str(round(max_power, 2)) + "\nTotal energy consumption (kWh) : " + str(round(total_energy, 2))
-      pdf.write(5, str10)
-  
-      pdf.add_page()
-      pdf.set_xy(20, 20)
-      pdf.set_font('arial', 'B', 16)
-      pdf.cell(0, 10, "Heatmap", 0, 1, 'C')
-      pdf.set_font('arial', '', 12)
-      str3 = "The following graph illustrates the energy to distinguish activity levels. Light spots correspond to low activity while dark spots correspond to high activity."
-      pdf.write(5, str3)
-      pdf.cell(75, 10, " ", 0, 2, 'C')
-      pdf.image('heatmap_with_energy.png', x=10, y=None, w=200, h=120, type='', link='')
-    except :
-      print('No such image')
-      pdf.cell(0, 10, "\n", 0, 1, 'C')
-      pdf.write(5, str9)
-      pdf.set_xy(10, 40)
-      str10 = "\nMaximum active power (kW) : " + str(round(max_power, 2)) + "\nTotal energy consumption (kWh) : " + str(round(total_energy, 2))
-      pdf.write(5, str10)
-  
 
-      pdf.set_xy(20, 80)
-      pdf.set_font('arial', 'B', 16)
-      pdf.cell(0, 10, "Heatmap", 0, 1, 'C')
-      pdf.set_font('arial', '', 12)
-      str3 = "The following graph illustrates the energy to distinguish activity levels. Light spots correspond to low activity while dark spots correspond to high activity."
-      pdf.write(5, str3)
-      pdf.cell(75, 10, " ", 0, 2, 'C')
-      pdf.image('heatmap_with_energy.png', x=10, y=None, w=200, h=120, type='', link='')
+    #print('No such image')
+    pdf.cell(0, 10, "\n", 0, 1, 'C')
+    pdf.write(5, str9)
+    pdf.set_xy(10, 40)
+    str10 = "\nMaximum active power per "+str(interval)+" minute(s) (kW) : " + str(round(max_power, 2)) + "\nTotal energy consumption (kWh) : " + str(round(total_energy, 2))
+    pdf.write(5, str10)
+  
+  
+    pdf.set_xy(20, 80)
+    pdf.set_font('arial', 'B', 16)
+    pdf.cell(0, 10, "Heatmap", 0, 1, 'C')
+    pdf.set_font('arial', '', 12)
+    str3 = "The following graph illustrates the energy to distinguish activity levels. Light spots correspond to low activity while dark spots correspond to high activity."
+    pdf.write(5, str3)
+    pdf.cell(75, 10, " ", 0, 2, 'C')
+    pdf.image('heatmap_with_energy.png', x=10, y=None, w=200, h=120, type='', link='')
       
     #pdf.image("nosokomeio_rio.png", x=10, y=None, w=180, h=120, type='', link='')
     
@@ -871,12 +949,12 @@ def create_pdf(path, filename, max_power, total_energy, month_Name, building_nam
 
     pdf.set_xy(10, 150)
     pdf.set_font('arial', 'B', 16)
-    pdf.cell(0, 10, "Energy plot for the entire month\n", 0, 1, 'C')
+    pdf.cell(0, 10, "Demand power plot for the entire month\n", 0, 1, 'C')
     pdf.set_font('arial', '', 12)
-    str8 = "The following chart depicts energy consumption as a function of time."
+    str8 = "The following chart depicts demand power over 15 minutes interval."
     pdf.write(5, str8)
     pdf.cell(75, 10, " ", 0, 2, 'C')
-    pdf.image('plot_energy_for_the_whole_month.png', x=10, y=None, w=180, h=100, type='', link='')
+    pdf.image('plot_demand_power.png', x=10, y=None, w=180, h=100, type='', link='')
 
     pdf.add_page()
     pdf.set_xy(20, 20)
@@ -901,6 +979,29 @@ def create_pdf(path, filename, max_power, total_energy, month_Name, building_nam
       pdf.cell(75, 10, " ", 0, 2, 'C')
       pdf.image('plot_energy_and_temperature.png', x=10, y=None, w=200, h=120, type='', link='')
 
+    
+    pdf.add_page()
+    pdf.set_xy(20, 20)
+    pdf.set_font('arial', 'B', 16)
+    pdf.cell(0, 10, "Active power histogram\n", 0, 1, 'C')
+    pdf.set_font('arial', '', 12)
+    str15 = "The figures below depict the histograms of active power A,B,C accordingly."
+    pdf.write(5, str15)
+    pdf.cell(75, 10, " ", 0, 2, 'C')
+    pdf.cell(-75)
+    pdf.image('plot_histA.png', x=40, y=None, w=120, h=70, type='', link='')
+
+    pdf.set_xy(10, 100)
+    pdf.cell(75, 10, " ", 0, 2, 'C')
+    pdf.cell(-75)
+    pdf.image('plot_histB.png', x=40, y=None, w=120, h=70, type='', link='')
+    
+    pdf.set_xy(5, 180)
+    pdf.cell(75, 10, " ", 0, 2, 'C')
+    pdf.cell(-75)
+    pdf.image('plot_histC.png', x=40, y=None, w=120, h=70, type='', link='')    
+    
+    
     pdf.add_page()
     pdf.set_xy(20, 20)
     pdf.set_font('arial', 'B', 16)
@@ -930,8 +1031,9 @@ def create_pdf(path, filename, max_power, total_energy, month_Name, building_nam
     pdf.write(5, str6)
     pdf.cell(75, 10, " ", 0, 2, 'C')
     pdf.cell(-75)
-    pdf.image('energy_of_weekend_with_maximum_consumption.png', x=10, y=None, w=180, h=100, type='', link='')
 
+    pdf.image('energy_of_weekend_with_maximum_consumption.png', x=10, y=None, w=180, h=100, type='', link='')
+    
     pdf.set_xy(10, 150)
     pdf.set_font('arial', 'B', 16)
     pdf.cell(0, 10, "Minimum energy on weekends\n", 0, 1, 'C')
@@ -940,26 +1042,28 @@ def create_pdf(path, filename, max_power, total_energy, month_Name, building_nam
     pdf.write(5, str7)
     pdf.cell(75, 10, " ", 0, 2, 'C')
     pdf.image('energy_of_weekend_with_minimum_consumption.png', x=10, y=None, w=180, h=100, type='', link='')
-
+    
     os.chdir(path)
-
+    
     pdf.output(filename + ".pdf", 'F')
+    print('Current DIR:',os.getcwd())
+    return
 
 
 def main(argv):
 
-    print(argv)
+    #print(argv)
 
     month = int(argv[1])
     year = int(argv[2])
     device_id = str(argv[3])
     device_name = str(argv[4])
     asset_id = str(argv[5])
-    building_name = str(argv[6])
-    tmzn = str(argv[7])
-
-    path = '../PDF Files/'
-    
+    tmzn = str(argv[6])
+      
+    print('Arguments:',argv)
+    path = '/home/iotsm/HttpServer_Andreas/PDF Files/'
+    os.chdir('/home/iotsm/HttpServer_Andreas/serverFiles/')
     
     filename = str(device_name)+'_'+str(month) + '_' + str(year)
 
@@ -989,23 +1093,29 @@ def main(argv):
        # pdf = FPDF()
        # pdf.output("empty.pdf", 'F')
         return "empty"
-    print('download power data...')
+    #print('download power data...')
     power = download_data(start_epoch, end_epoch, device_id, asset_id,r2, tmzn,interval)
-    print('power data download completed')
+    #print(power.head())
+    #print('power data download completed')
     
-    max_power = max(power.total)
-    total_energy = sum(energy.totalnrg)
+    max_power = power['total'].max()
+    total_energy = energy['totalnrg'].sum()
     
     energy = energy.reset_index(drop=False)
     energy.columns = ['Timestamp', 'totalnrg', 'nrgA', 'nrgB', 'nrgC']
     #energy['Timestamp'] = energy['Timestamp'].dt.tz_localize('utc').dt.tz_convert('Europe/Athens')
     energy = set_labels(energy)
-    print('start creating plots...')
+    #print('start creating plots...')
+    
+    
+    
     try :
         month_Name = plot_energy_for_each_day(energy)
-        plot_energy_for_the_whole_month(energy)
-
-
+        plot_demand_power(power)
+        plot_histA(power)
+        plot_histB(power)
+        plot_histC(power)
+        
         plot_month_statistics(energy)
 
         heatmap_with_energy(energy)
@@ -1017,16 +1127,18 @@ def main(argv):
 
 
         df_merged = pd.merge(power, energy, how='inner', on='Timestamp')
-        print('merged energy and power')
-        print(df_merged.head())
+        #print('merged energy and power')
+        #print(df_merged.head())
 
         try:
             plot_energy_and_temperature(df_merged, tmzn)
         except:
             print('No temperature')
+            
         print('create pdf')
-        create_pdf(path, filename, max_power, total_energy, month_Name, building_name)
-        os.chdir('../serverFiles')
+        create_pdf(path, filename, max_power, total_energy, month_Name,interval)
+        
+        os.chdir('/home/iotsm/HttpServer_Andreas/serverFiles/')
         # os.chdir('../autoreports')
         if os.path.isfile('plot_energy_for_each_day.png'):
             os.remove("plot_energy_for_each_day.png")
@@ -1046,6 +1158,14 @@ def main(argv):
             os.remove("energy_of_weekend_with_minimum_consumption.png")
         if os.path.isfile('plot_energy_and_temperature.png'):
             os.remove("plot_energy_and_temperature.png")
+        if os.path.isfile('plot_histA.png'):
+            os.remove("plot_histA.png")
+        if os.path.isfile('plot_histB.png'):
+            os.remove("plot_histB.png")
+        if os.path.isfile('plot_histC.png'):
+            os.remove("plot_histC.png")
+        if os.path.isfile('plot_demand_power.png'):
+            os.remove("plot_demand_power.png")
     except :
         if os.path.isfile('plot_energy_for_each_day.png'):
             os.remove("plot_energy_for_each_day.png")
@@ -1065,7 +1185,15 @@ def main(argv):
             os.remove("energy_of_weekend_with_minimum_consumption.png")
         if os.path.isfile('plot_energy_and_temperature.png'):
             os.remove("plot_energy_and_temperature.png")
-        print('fail')
+        if os.path.isfile('plot_histA.png'):
+            os.remove("plot_histA.png")
+        if os.path.isfile('plot_histB.png'):
+            os.remove("plot_histB.png")
+        if os.path.isfile('plot_histC.png'):
+            os.remove("plot_histC.png")
+        if os.path.isfile('plot_demand_power.png'):
+            os.remove("plot_demand_power.png")
+        #print('fail')
 
 
 
