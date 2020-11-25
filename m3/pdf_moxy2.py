@@ -17,6 +17,7 @@ from dateutil.relativedelta import relativedelta
 import time
 import calendar
 #
+from fpdf import FPDF
 import matplotlib.pyplot as plt
 import seaborn as sns
 
@@ -30,7 +31,7 @@ from email import encoders
 #
 #
 
-
+plt.rcParams.update({'font.size': 14})
         
 def conv_to_consumption(df, interval,Amin,Bmin,Cmin):
     #     convert cumulative energy to consumed energy
@@ -475,7 +476,7 @@ def EnPis(dftotal, dfair, occ):
     colors = plt.cm.GnBu(np.linspace(0, 0.8, len(rows)))
     t= ax1.table(cellText=enpi_list, colLabels=columns, rowLabels=rows, loc='center', cellLoc ='center', colLoc='center', rowColours=colors,colWidths=[0.4])
     t.auto_set_font_size(False) 
-    t.set_fontsize(10)
+    #t.set_fontsize(10)
     
     fig.tight_layout()
     fig.savefig('EnPis.png')
@@ -501,7 +502,7 @@ def daily_stats(df,label,color):
     colors = plt.cm.BuPu(np.linspace(0, 0.5, len(dftmp.index)))
     t= ax1.table(cellText=dftmp.round(decimals=2).values, colLabels=dftmp.columns, rowLabels=dftmp.index.date, loc='center', cellLoc ='center', colLoc='center', rowColours=colors,colColours=['c','tab:orange','tab:purple'])
     t.auto_set_font_size(False) 
-    t.set_fontsize(10)
+    #t.set_fontsize(10)
     
     fig.tight_layout()
     fig.savefig('dailyStats_'+str(label)+'.png')
@@ -520,7 +521,7 @@ def daily_stats(df,label,color):
     colors = plt.cm.BuGn(np.linspace(0, 0.5, len(dftmp.index)))
     t= ax1.table(cellText=stats.round(decimals=2).values, colLabels=stats.columns, rowLabels=stats.index.date, loc='center', cellLoc ='center', colLoc='center', colWidths=[0.6 for x in dftmp.columns], rowColours=colors,colColours=['c'])
     t.auto_set_font_size(False) 
-    t.set_fontsize(10)
+    #t.set_fontsize(10)
     fig.tight_layout()
     fig.savefig('monthlyStats_'+str(label)+'.png')
     
@@ -539,7 +540,7 @@ def MaxPwr(df,label):
     colors = plt.cm.Spectral_r(np.linspace(0, 0.5, len(dftmp.index)))
     t= ax1.table(cellText=dftmp.round(decimals=2).values, colLabels=dftmp.columns, rowLabels=dftmp.index, loc='center', cellLoc ='center', colLoc='center', colWidths=[0.8 for x in dftmp.columns],rowColours=colors,colColours=['tab:purple'])
     t.auto_set_font_size(False) 
-    t.set_fontsize(10)
+    #t.set_fontsize(10)
     
     fig.tight_layout()
     fig.savefig('10maxPwr_'+str(label)+'.png')
@@ -641,7 +642,7 @@ def plot_pie(sum_nrg):
     #t= axs[0].table(cellText=sum_nrg.round(decimals=2).values, colWidths = [0.5]*len(sum_nrg.columns),  colLabels=sum_nrg.columns,  loc='center')
     t= ax1.table(cellText=sum_nrg.round(decimals=2).values, colLabels=sum_nrg.columns,  loc='center',cellLoc ='center', colLoc='center', colColours=['c','c','c'])
     t.auto_set_font_size(False) 
-    t.set_fontsize(10)
+    #t.set_fontsize(12)
     
     
 
@@ -667,7 +668,61 @@ def plot_pie(sum_nrg):
 
 
 
+class FPDF(FPDF):
+    # Page footer
+    def footer(self):
+        # Position at 1.5 cm from bottom
+        self.set_y(-15)
+        # Arial italic 8
+        self.set_font('Arial', 'I', 8)
+        # Page number
+        self.cell(0, 10, str(self.page_no()), 0, 0, 'C')
+        #self.set_y(-10)
+  #      self.image('picturemessage_vinnf3lu.tl2.png', x=180, y=None, w=25, h=8)
+    def header(self):
+        self.set_y(10)
+        self.image('meazon.png', x=10, y=None, w=30, h=10)
+
+
+
+def create_pdf(path, filename, month_Name):
     
+    
+    
+    pdf = FPDF()
+    
+    pdf.add_page()
+    pdf.set_xy(20, 20)
+    pdf.set_font('arial', 'B', 16)
+    pdf.cell(0, 10, "Summarized activity of month: "+ month_Name, 0, 1, 'C')
+	
+    pdf.set_font('arial', '', 12)
+    str9 = " "
+    pdf.write(5, str9)
+
+    
+  
+  
+    pdf.set_xy(20, 30)
+    pdf.set_font('arial', 'B', 16)
+    pdf.cell(0, 10, "Energy loads & pie chart", 0, 1, 'C')
+    pdf.cell(40, 10, " ", 0, 2, 'C')
+    pdf.image('moxypie.png', x=10, y=None, w=200, h=150, type='', link='')
+      
+    #pdf.image("nosokomeio_rio.png", x=10, y=None, w=180, h=120, type='', link='')
+    
+
+    
+
+    
+    
+    
+    
+    pdf.output(filename + ".pdf", 'F')
+    print('Current DIR:',os.getcwd())
+    return
+    
+        
 
 def main(argv):
     
@@ -759,6 +814,9 @@ def main(argv):
                 box_plots(summary,label)
                 daily_stats(summary,label,color)
                 MaxPwr(summary,label)
+    
+    month_Name = calendar.month_name[summary.index[0].month]
+    print('Month:',month_Name)
     EnPis(dftotal,dfair,occ)
 
     plot_pie(sum_nrg)
@@ -771,6 +829,14 @@ def main(argv):
     
     # plot line chart for these months
     nrg_occ(df,occ)
+    
+    # Create pdf
+    filename='Moxy_'+str(month_Name)+'_report.pdf'
+    path = '/home/iotsm/HttpServer_Andreas/serverFiles/'
+    os.chdir(path)
+    
+    
+    create_pdf(path, filename, month_Name)
     
     ## send email to recipient
     #sbj =  'Monthly data export'
