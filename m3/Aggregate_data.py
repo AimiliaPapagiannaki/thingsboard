@@ -22,7 +22,7 @@ address = "http://localhost:8080"
 
 
 
-def align_resample(df, cnrg,pwr,rpwr,frun,pvind):
+def align_resample(df, cnrg,pwr,rpwr,frun,pvind,pvser):
 
   
     df['Timestamp'] = pd.to_datetime(df['Timestamp'], format='%Y/%m/%d %H:%M:%S.%f')
@@ -32,11 +32,19 @@ def align_resample(df, cnrg,pwr,rpwr,frun,pvind):
     df['Timestamp'] = df['Timestamp'].astype('datetime64[s]')
     df = df.set_index('Timestamp', drop=True)
 
+
     for col in df.columns:
         df[col] = df[col].astype(float)
-
-
     
+    
+    # reverse pwr sign to matvh other PV
+    if pvind==1:
+        if pvser=='102.402.000110':
+            for pr in pwr:
+                df[pr] = -df[pr]
+            for rpr in rpwr:
+                df[rpr] = -df[rpr]
+            
     # identify report interval and round to closest minute
     #tmpdf = pd.DataFrame(df[df.columns[0]].dropna())
     #tmpdf['minutes'] = tmpdf.index.minute
@@ -47,70 +55,98 @@ def align_resample(df, cnrg,pwr,rpwr,frun,pvind):
 
     df = df.groupby(df.index).max()
     df.sort_index(inplace=True)
+    
+    overfl={}
+    
 
-    # if a spike is detected, assign previous values
+    
+    
     if pvind==0:
         for nrg in cnrg:
-            #print('Found negative dE')
-            print(df.loc[(df[nrg].shift(-1)-df[nrg])<0])
-            df.loc[(df[nrg].shift(-1)-df[nrg])<0,nrg] = df[nrg].shift()
+            
+            tmp = df[[nrg]].copy()
+            tmp = tmp.dropna()
+            # check if there has been overflow and add values
+            if not frun:
+                # if there has been an overflow, add values
+                if path.exists("/home/iotsm/Analytics/jsonfiles/"+str(pvser.replace('.','').replace(':',''))+".json"):
+                    
+                    with open('/home/iotsm/Analytics/jsonfiles/'+str(pvser.replace('.','').replace(':',''))+'.json') as f:
+                        tmpdict = json.load(f)
+                    print('PAST OVERFLOW',tmpdict[nrg])
+                    tmp[nrg] = tmp[nrg]+tmpdict[nrg]
+                    
+            
+            #df.loc[df['diff']<0, 'diff'] = df.loc[df['diff']<0, 'diff'].values+df.loc[df['diff'].shift(-1)<0,nrg].values
+            
+            # if next value is smaller, but next-previous is still cumulative, consider it a spike and make it nan -->positive spike
+            print(tmp.loc[(((tmp[nrg].shift(-1)-tmp[nrg])<(0)) & ((tmp[nrg].shift(-1)-tmp[nrg].shift())>=0)),nrg])
+            tmp.loc[(((tmp[nrg].shift(-1)-tmp[nrg])<(0)) & ((tmp[nrg].shift(-1)-tmp[nrg].shift())>=0)),nrg] = tmp[nrg].shift()
+            
+            # if next value is smaller, but second next-current is still cumulative, consider it a spike and make it nan -->negative spike
+            tmp.loc[(((tmp[nrg]-tmp[nrg].shift())<(0)) & ((tmp[nrg].shift(-1)-tmp[nrg].shift())>0)),nrg] = tmp[nrg].shift()
+            
+            if not tmp.loc[(tmp[nrg].shift(-1)-tmp[nrg])<(-200)].empty:
+                print('Found negative dE')
+                ind = tmp.index[(tmp[nrg].shift(-1)-tmp[nrg])<(-200)].values[0]
+                val = (tmp.loc[(tmp[nrg].shift(-1)-tmp[nrg])<(-200),nrg].values[0] - tmp.loc[(tmp[nrg]-tmp[nrg].shift())<(-100),nrg].values[0]) 
+                print('Index and val of overflow:',ind,val)
+                
+                tmp.loc[tmp.index>ind,nrg] += val
+                
+                overfl[nrg] = val
+                
+            df = df.drop(nrg,axis=1)
+            df = pd.concat([df,tmp],axis=1)
+            del tmp
+                
+        if overfl:
+            jfile = pvser.replace('.','').replace(':','')
+            with open('/home/iotsm/Analytics/jsonfiles/'+str(jfile)+'.json', 'w') as f:
+                json.dump(overfl, f)
+                
+            
+                    
+            
+            
+            
+    # sum energies into one variable        
     
-    if frun==0:
-        tmp = pd.DataFrame(df).copy()
-        tmp['totalCnrg'] = np.zeros(tmp.shape[0])
-        for nrg in cnrg:
-            tmp['totalCnrg'] = tmp['totalCnrg'] + tmp[nrg]
-        #print('Total nrg for this device is:',np.max(tmp['totalCnrg']))
-        dif = np.max(tmp['totalCnrg']) - np.min(tmp['totalCnrg'])
-        if np.isnan(dif):dif=0
-        del tmp
+    df['totalMeanpwr'] = np.zeros(df.shape[0])
+    df['totalRpwr'] = np.zeros(df.shape[0])
     
-    df_demand = df.resample('15T',label = 'left').max().copy()
-    
-    df_demand['totalMaxpwr'] = np.zeros(df_demand.shape[0])
-    df_demand['totalCnrg'] = np.zeros(df_demand.shape[0])
-    
-   
-    for nrg in cnrg:
-        df_demand['totalCnrg'] = df_demand['totalCnrg'] + df_demand[nrg]
-        
-    ######### check if there are nan values in cnrg
-    if frun==1:
-    
-        for i in range(1,df_demand.shape[0]):
-            if np.isnan(df_demand['totalCnrg'].iloc[i]):
-                df_demand['totalCnrg'].iloc[i] = df_demand['totalCnrg'].iloc[i-1]
-                #print('Found nans, new value is:',df_demand['totalCnrg'].iloc[i])
-    else:
-        df_demand['totalCnrg'] = dif
-    
-        
-
-    # calculate mean and max power
     for pr in pwr:
-        df_demand['totalMaxpwr'] = df_demand['totalMaxpwr'] + df_demand[pr]
-
-    df_demand = df_demand[['totalMaxpwr','totalCnrg']]
-
-    df = df.resample('15T',label = 'left').mean()
-    df['totalMeanpwr'] = np.zeros(df_demand.shape[0])
+            df['totalMeanpwr'] = df['totalMeanpwr'] + df[pr]
     
-    
-    df['totalRpwr'] = np.zeros(df_demand.shape[0])
-    
-    for pr in pwr:
-        df['totalMeanpwr'] = df['totalMeanpwr'] + df[pr]
     for rpr in rpwr:
         if rpr in df.columns:
             df['totalRpwr'] = df['totalRpwr'] + df[rpr]
         else:
             df['totalRpwr'] = np.nan
-
     
+    df = df.resample('5T',label = 'left').mean().copy()
+    df1 = df.resample('5T',label = 'left').max().copy()
+    
+    
+    df1['totalCnrg'] = np.zeros(df.shape[0])
+    for nrg in cnrg:
+        df1['totalCnrg'] = df1['totalCnrg'] + df1[nrg]    
+        
+    df = pd.concat([df,df1['totalCnrg']],axis=1)
+    del df1
+            
+    ######### check if there are nan values in cnrg
+    if frun==1:
+    
+        for i in range(1,df.shape[0]):
+            if np.isnan(df['totalCnrg'].iloc[i]):
+                df['totalCnrg'].iloc[i] = df['totalCnrg'].iloc[i-1]
+                #print('Found nans, new value is:',df_demand['totalCnrg'].iloc[i])
+
     # df.reset_index(inplace=True, drop=False)
     # df.set_index('ts', inplace=True, drop=False)
-    df = pd.concat([df, df_demand], axis=1)
-    df = df[['totalCnrg', 'totalMaxpwr', 'totalMeanpwr','totalRpwr']]
+    
+    df = df[['totalCnrg', 'totalMeanpwr','totalRpwr']]
 ######    print('df after concat:',df.head())
 
     return df
@@ -309,6 +345,9 @@ def download_nrg(start_date, end_date, devid,acc_token,pvind,pvser):
         df = df.rename(columns={"ts": "Timestamp"})
         
         
+        
+        
+                
         if pvser=='102.402.000110':
             
             cnrg=['cnrgA','cnrgB','cnrgC']
@@ -337,14 +376,15 @@ def get_energy_data(start_date, end_date, devid,acc_token,frun,pvind,pvser):
     else:
         [energy,cnrg,pwr,rpwr] = download_nrg(start_date, end_date, devid,acc_token,pvind,pvser)
 
-    if energy.empty == True:
+    #print(energy)
+    #if energy.empty==True:
+    if cnrg[0] not in energy.columns:
         energy = pd.DataFrame([])
-        
         return energy
     else:
-        energy = align_resample(energy,cnrg,pwr,rpwr,frun,pvind)
+        energy = align_resample(energy,cnrg,pwr,rpwr,frun,pvind,pvser)
         
-    
+
         # energy['Timestamp'] = energy['Timestamp'].dt.tz_localize('utc')
         # energy.set_index('Timestamp', inplace=True, drop=False)
 
@@ -370,11 +410,9 @@ def transform_df(df):
     
 def transform_pv(df):
    
-    if df.shape[1]==1:
-        df.drop('totalMaxPVpwr',inplace=True)
-    else:
-        df.drop('totalMaxPVpwr',axis=1,inplace=True)
+    
     df['totalPnrg'] = df['totalPnrg'].apply(str)
+    df['totalMaxPVpwr'] = df['totalMaxPVpwr'].apply(str)
     df['totalPVpwr'] = df['totalPVpwr'].apply(str)
     if df['totalPVrpwr'].isnull().all(): 
         df.drop('totalPVrpwr',axis=1,inplace=True)
@@ -385,14 +423,13 @@ def transform_pv(df):
 
     # df['ts'] = df['ts'].astype(int)
     if 'totalPVrpwr' in df.columns:
-        df.columns = ['totalPnrg','totalPVpwr','totalPVrpwr','ts']
+        df.columns = ['totalPnrg','totalMaxPVpwr','totalPVpwr','totalPVrpwr','ts']
     else:
-        df.columns = ['totalPnrg','totalPVpwr','ts']
+        df.columns = ['totalPnrg','totalMaxPVpwr','totalPVpwr','ts']
     df.set_index('ts',inplace = True, drop = True)
     mydict = df.to_dict('index')
 
     return mydict
-
 
 
 def thingsboard_http(acc_token, dev_token, mydict):
@@ -418,34 +455,38 @@ def main():
     startt = time.time()
 
     # input arguments -->DEH assetid
-    entityID =  str('a457a6e0-676f-11ea-9788-2bd444f36b4e')
+    entityID =  str('a457a6e0-676f-11ea-9788-2bd444f36b4e') #Aggregated meter
     DevToken = 'cuCNBRaiJ04PQtsKWVNv'
 
-    if path.exists("/home/iotsm/Analytics/testfiles/test_agg.txt") == False:
+    if path.exists("/home/iotsm/Analytics/testfiles/test_dei.txt") == False:
         # First run. Create test file
         print('First run')
         frun=1
-        os.mknod("/home/iotsm/Analytics/testfiles/test_agg.txt")
+        os.mknod("/home/iotsm/Analytics/testfiles/test_dei.txt")
         # end_ = (datetime.datetime.now())
         end_ = datetime.datetime.utcnow()
         
         end_ = end_ - datetime.timedelta(seconds=end_.second%60,
                                           microseconds=end_.microsecond)
+        end_ = end_ - datetime.timedelta(minutes=end_.minute,seconds=end_.second%60,microseconds=end_.microsecond)
+        end_ = end_ - relativedelta(seconds=1)
         print('Running script at time:', end_)
 
         # start from 1/4/2020 12:00 AM
         start_time = int(1585688400000)
         end_time = int(end_.replace(tzinfo=pytz.utc).timestamp()) * 1000
-        
+
 
     else:
         print('\n\n\n')
         print('No first run')
         frun = 0
         end_ = (datetime.datetime.utcnow())
-        end_ = end_ - datetime.timedelta(seconds=end_.second%60,microseconds=end_.microsecond)
+        end_ = end_ - datetime.timedelta(minutes=end_.minute,seconds=end_.second%60,microseconds=end_.microsecond)
+        start_ = end_ + relativedelta(minutes=-60)
+        end_ = end_ - relativedelta(seconds=1)
         print('Running script at time:', end_)
-        start_ = end_ + relativedelta(minutes=-15)
+        
 
         end_time = int(end_.replace(tzinfo=pytz.utc).timestamp()) * 1000
         start_time = int(start_.replace(tzinfo=pytz.utc).timestamp()) * 1000
@@ -467,6 +508,8 @@ def main():
 
     dfpv = pd.DataFrame([])
     dfglob = pd.DataFrame([])
+    
+    cnrgdict = dict()
     for device in r1:
 
         # read ID and name of building's devices
@@ -487,19 +530,70 @@ def main():
         print('TIME:',start_time, end_time)
         # Fetch cnrg and cnrgest data
         energy = get_energy_data(start_time, end_time, devid,acc_token,frun,pvind,pvser)
-        print(energy)
+        
+        # Store last cnrg value to json
+        if frun==1:
+            cnrgdict[devName] = energy['totalCnrg'].iloc[-1]
+        else:
+            if energy.empty:
+                with open('/home/iotsm/Analytics/jsonfiles/cnrgjson.json') as f:
+                    tmpdict = json.load(f)
+                cnrgdict[devName] = tmpdict[devName]
+            else:
+                cnrgdict[devName] = energy['totalCnrg'].iloc[-1]
+                    
+            
+        print(energy.tail())
+        
         if pvind==1:
-            dfpv = pd.concat([dfpv, energy]).groupby(level=0).sum()
+            if energy.empty==False:
+                dfpv= pd.concat([dfpv,energy],axis=1).fillna(method='ffill')
+                dfpv = dfpv.groupby(by=dfpv.columns, axis=1).sum()
+                #dfpv = pd.concat([dfpv, energy]).groupby(level=0).sum()
+                
+            else:
+                dfpv['totalCnrg'].iloc[-1] = dfpv['totalCnrg'].iloc[-1] + tmpdict[devName]
+            print('dfpv contat tail:',dfpv.tail())
             
             
         else:
-            dfglob = pd.concat([dfglob, energy]).groupby(level=0).sum()
+            if energy.empty==False:
+                dfglob= pd.concat([dfglob,energy],axis=1).fillna(method='ffill')
+                dfglob = dfglob.groupby(by=dfglob.columns, axis=1).sum()
+                #dfglob = pd.concat([dfglob, energy]).groupby(level=0).sum()
+                
+            else:
+                dfglob['totalCnrg'].iloc[-1] = dfglob['totalCnrg'].iloc[-1] + tmpdict[devName]
+            print('dfglob contat tail:',dfglob.tail())
+            
     
-    # reverse pwr sign to matvh other PV
-    if pvser=='102.402.000124':
-        df['totalPVpwr']=-df['totalPVpwr']
-        
+    # write latest cnrg of each device to json
+    with open('/home/iotsm/Analytics/jsonfiles/cnrgjson.json', 'w') as f:
+        json.dump(cnrgdict, f)
+    #cnrgjson = json.dumps(cnrgdict)
+    
+    # resample on 1hour
+    tmp = dfglob.resample('1H',label = 'left').mean().copy()
+    dfglob = dfglob.resample('1H',label = 'left').max().copy()
+    dfglob.drop('totalRpwr',axis=1,inplace=True)
+    dfglob.rename(columns = {"totalMeanpwr":"totalMaxpwr"},inplace=True)
+
+    dfglob = pd.concat([dfglob,tmp[['totalMeanpwr','totalRpwr']]],axis=1)
+    del tmp
+    
+    tmp = dfpv.resample('1H',label = 'left').mean().copy()
+    dfpv = dfpv.resample('1H',label = 'left').max().copy()
+    dfpv.drop('totalRpwr',axis=1,inplace=True)
+    dfpv.rename(columns = {"totalMeanpwr":"totalMaxpwr"},inplace=True)
+    
+    dfpv = pd.concat([dfpv,tmp[['totalMeanpwr','totalRpwr']]],axis=1)
+    del tmp
+      
     dfpv.rename(columns={"totalCnrg":"totalPnrg","totalMeanpwr":"totalPVpwr","totalMaxpwr":"totalMaxPVpwr","totalRpwr":"totalPVrpwr"},inplace=True)    
+    
+    print("###############################")
+    print('dfglob:',dfglob.tail())
+    print('dfpv:',dfpv.tail())
     
     if frun==0:
         oldt =  end_ + relativedelta(days=-9)
@@ -524,26 +618,12 @@ def main():
         print('Old totalCnrg is:',df['totalCnrg'].values)    
     if dfglob.empty == False:
         
-        if frun==1:
-            for i in range(-4,0):
-                if dfglob['totalCnrg'].iloc[i]<dfglob['totalCnrg'].iloc[i-1]:
-                    dfglob['totalCnrg'].iloc[i] = dfglob['totalCnrg'].iloc[i-1]
-        
         if frun==0:
-            if dfglob.shape[0]>1:
-                print('dfglob is:',dfglob)
-                #if dfglob['totalCnrg'].iloc[-1]==dfglob['totalCnrg'].iloc[-2]:
-                if dfglob['totalCnrg'].iloc[-1]<10:
-                    dfglob = dfglob.iloc[-2:-1]    
-                else:
-                    dfglob = dfglob.iloc[-2:-1]
-            #else:
-             #   dfglob = dfglob.loc[dfglob['totalCnrg']==dfglob['totalCnrg'].max()]
-            
-            dfglob['totalCnrg'] = dfglob['totalCnrg'] + df['totalCnrg'].values
+            print('old cnrg was:',df['totalCnrg'])
             print('new total cnrg:',dfglob['totalCnrg'])
-        print()
+        
         # transform dfs
+        print()
         mydict = transform_df(dfglob)
         
     else:
@@ -552,24 +632,9 @@ def main():
         
         
     if dfpv.empty == False:
-        if frun==1:
-            for i in range(-4,0):
-                if dfpv['totalPnrg'].iloc[i]<dfpv['totalPnrg'].iloc[i-1]:
-                    dfpv['totalPnrg'].iloc[i] = dfpv['totalPnrg'].iloc[i-1]
-            print('First run, PV:',dfpv.tail())
-                
-        
+
         if frun==0:
-            
-            #if dfpv['totalPnrg'].iloc[-1]==dfpv['totalPnrg'].iloc[-2]:
-            if dfpv['totalPnrg'].iloc[-1]<5:
-                dfpv = dfpv.iloc[-2:-1]
-            else:
-                dfpv = dfpv.iloc[-2:-1]
-            #else:
-             #   dfpv = dfpv.loc[dfpv['totalPnrg']==dfpv['totalPnrg'].max()]
-            print('total Pnrg before prev add:',dfpv['totalPnrg'])
-            dfpv['totalPnrg'] = dfpv['totalPnrg'] + df['totalPnrg'].values
+            print('old Pnrg was:',df['totalPnrg'])
             print('new total Pnrg:',dfpv['totalPnrg'])
         pvdict = transform_pv(dfpv)
     else:
