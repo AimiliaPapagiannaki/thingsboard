@@ -31,7 +31,7 @@ from email import encoders
 #
 #
 
-plt.rcParams.update({'font.size': 14})
+plt.rcParams.update({'font.size': 12})
         
 def conv_to_consumption(df, interval,Amin,Bmin,Cmin):
     #     convert cumulative energy to consumed energy
@@ -446,7 +446,7 @@ def nrg_occ(df,occ):
     plt.xlabel('Date')
     plt.ylabel('kWh/room')
     fig.tight_layout()
-    fig.savefig('energy_room.png')
+    fig.savefig('energy_room.png',dpi=150)
     #print(df)
     
 
@@ -470,16 +470,16 @@ def EnPis(dftotal, dfair, occ):
     enpi_list.append([round(totalnrg*kwval/totalOcc,2)])
     columns = ['EnPis']
     
-    fig = plt.figure(figsize=(12,5))
+    fig = plt.figure(figsize=(15,8))
     ax1 = plt.subplot(aspect='equal')
     ax1.axis('off')
     colors = plt.cm.GnBu(np.linspace(0, 0.8, len(rows)))
-    t= ax1.table(cellText=enpi_list, colLabels=columns, rowLabels=rows, loc='center', cellLoc ='center', colLoc='center', rowColours=colors,colWidths=[0.4])
+    t= ax1.table(cellText=enpi_list, colLabels=columns, rowLabels=rows, loc='center', cellLoc ='center', colLoc='center', rowColours=colors,colWidths=[0.5,0.5])
     t.auto_set_font_size(False) 
     #t.set_fontsize(10)
     
     fig.tight_layout()
-    fig.savefig('EnPis.png')
+    fig.savefig('EnPis.png',dpi=150)
     
     
     return
@@ -505,25 +505,28 @@ def daily_stats(df,label,color):
     #t.set_fontsize(10)
     
     fig.tight_layout()
-    fig.savefig('dailyStats_'+str(label)+'.png')
+    fig.savefig('dailyStats_'+str(label)+'.png',dpi=150)
     
     
     maxpwr = df.loc[df['Total Average active power (kW)'] == df['Total Average active power (kW)'].max(),'Total Average active power (kW)']
     minpwr =df.loc[df['Total Average active power (kW)'] == df['Total Average active power (kW)'].min(),'Total Average active power (kW)']
     stats = pd.DataFrame(pd.concat([maxpwr,minpwr]))
+    stats['Statistic'] = ['Maximum','Minimum']
+    stats.rename(columns={'Total Average active power (kW)':'Active power (kW)'},inplace=True)
+    print('stats:',stats)
     avgpwr = df['Total Average active power (kW)'].mean()
     
-    fig = plt.figure()
+    fig = plt.figure(figsize=(12,8))
     ax1 = plt.subplot(aspect='equal')
     ax1.axis('off')
     #ax1.axis('tight')
     #t= axs[0].table(cellText=sum_nrg.round(decimals=2).values, colWidths = [0.5]*len(sum_nrg.columns),  colLabels=sum_nrg.columns,  loc='center')
-    colors = plt.cm.BuGn(np.linspace(0, 0.5, len(dftmp.index)))
-    t= ax1.table(cellText=stats.round(decimals=2).values, colLabels=stats.columns, rowLabels=stats.index.date, loc='center', cellLoc ='center', colLoc='center', colWidths=[0.6 for x in dftmp.columns], rowColours=colors,colColours=['c'])
+    colors = plt.cm.BuGn([0.1, 0.5])
+    t= ax1.table(cellText=stats.round(decimals=2).values, colLabels=stats.columns, rowLabels=stats.index, loc='center', cellLoc ='center', colLoc='center', colWidths=[0.3 for x in stats.columns],colColours=colors)
     t.auto_set_font_size(False) 
     #t.set_fontsize(10)
     fig.tight_layout()
-    fig.savefig('monthlyStats_'+str(label)+'.png')
+    fig.savefig('monthlyStats_'+str(label)+'.png',dpi=150)
     
 
 def MaxPwr(df,label):
@@ -538,12 +541,12 @@ def MaxPwr(df,label):
     ax1 = plt.subplot(aspect='equal')
     ax1.axis('off')
     colors = plt.cm.Spectral_r(np.linspace(0, 0.5, len(dftmp.index)))
-    t= ax1.table(cellText=dftmp.round(decimals=2).values, colLabels=dftmp.columns, rowLabels=dftmp.index, loc='center', cellLoc ='center', colLoc='center', colWidths=[0.8 for x in dftmp.columns],rowColours=colors,colColours=['tab:purple'])
+    t= ax1.table(cellText=dftmp.round(decimals=2).values, colLabels=dftmp.columns, rowLabels=dftmp.index, loc='center', cellLoc ='center', colLoc='center', colWidths=[0.9 for x in dftmp.columns],rowColours=colors,colColours=['tab:purple'])
     t.auto_set_font_size(False) 
     #t.set_fontsize(10)
     
     fig.tight_layout()
-    fig.savefig('10maxPwr_'+str(label)+'.png')
+    fig.savefig('10maxPwr_'+str(label)+'.png',dpi=150)
     
     
         
@@ -554,14 +557,14 @@ def plot_energy_for_each_day(df,label,color):
     month = calendar.month_name[df.index[0].month]
 
     fig, ax = plt.subplots(figsize=(7.5, 5.0))
-    plt.setp(ax.xaxis.get_majorticklabels(), rotation=90)
+    plt.setp(ax.xaxis.get_majorticklabels())
     plt.bar(df.index.day, df['Total Consumed energy (kWh)'],color=color)
     plt.xlabel('Days of month')
     plt.ylabel('Energy [kWh]')
-    plt.xticks(df.index.day)
+    plt.xticks(df.index.day,rotation=90)
     plt.title(str(label)+' consumption during ' + month)
     fig.tight_layout()
-    plt.savefig('monthly_'+str(label)+'.png')
+    plt.savefig('monthly_'+str(label)+'.png',dpi=150)
     return month
     
 def box_plots(tmp,label):
@@ -575,11 +578,11 @@ def box_plots(tmp,label):
     #plt.savefig('boxplot_'+str(label)+'.png')
     
     df.rename(columns={'Total Average active power (kW)':'Active power (kW)'},inplace=True)
-    fig.set_size_inches((10,7))
+    fig.set_size_inches((12,8))
     bplot = sns.boxplot(x='day',y='Active power (kW)',data=df,ax=ax)
     ax.set_title('Boxplot of '+str(label)+' active power')
     ax.set_xticklabels(ax.get_xticklabels(),rotation=30)
-    bplot.figure.savefig('boxplot_'+str(label)+'.png')
+    bplot.figure.savefig('boxplot_'+str(label)+'.png',dpi=150)
     #bplot = sns.boxplot(y='Total Average active power (kW)', x='day',data=df,width=0.5, palette="colorblind")
     #bplot.set_xlabel('Days of month')
     #bplot.set_ylabel('Active power [kW]')
@@ -605,7 +608,7 @@ def heatmap_nrg(df):
     plt.title('Heatmap of active power (kW)')
     plt.xlabel('Hours')
     plt.ylabel('Days of month')
-    plt.savefig('heatmap_nrg.png')
+    plt.savefig('heatmap_nrg.png',dpi=150)
     
     
 def plot_pie(sum_nrg):
@@ -635,14 +638,14 @@ def plot_pie(sum_nrg):
     
         
     #####################
-    fig = plt.figure(figsize=(18,13))
+    fig = plt.figure(figsize=(20,15))
     ax1 = plt.subplot(211, aspect='equal')
     ax1.axis('off')
     #ax1.axis('tight')
     #t= axs[0].table(cellText=sum_nrg.round(decimals=2).values, colWidths = [0.5]*len(sum_nrg.columns),  colLabels=sum_nrg.columns,  loc='center')
-    t= ax1.table(cellText=sum_nrg.round(decimals=2).values, colLabels=sum_nrg.columns,  loc='center',cellLoc ='center', colLoc='center', colColours=['c','c','c'])
+    t= ax1.table(cellText=sum_nrg.round(decimals=2).values, colLabels=sum_nrg.columns,  loc='center',cellLoc ='center', colLoc='center', colColours=['c','c','c'],colWidths=[0.5 for x in sum_nrg.columns])
     t.auto_set_font_size(False) 
-    #t.set_fontsize(12)
+    t.set_fontsize(14)
     
     
 
@@ -660,11 +663,11 @@ def plot_pie(sum_nrg):
     #fig = plt.figure(figsize=(13, 10))
     #plt.pie(nrg['Total consumed energy (kWh)'].values,colors=inner_colors,autopct='%1.1f%%')
     nrg.plot.pie(y = 'Total consumed energy (kWh)',ax = ax2, colors=inner_colors,autopct='%1.1f%%', radius=0.9)
-    ax2.legend(loc = 'lower right')
+    #ax2.legend(loc = 'lower right')
     fig.tight_layout()
 
     
-    fig.savefig('moxypie.png')
+    fig.savefig('moxypie.png',dpi=150)
 
 
 
@@ -719,7 +722,7 @@ def create_pdf(path, filename, month_Name):
     
     
     pdf.output(filename + ".pdf", 'F')
-    print('Current DIR:',os.getcwd())
+    
     return
     
         
@@ -756,8 +759,8 @@ def main(argv):
     #######################
     print(start_time,end_time)
     
-    path = '../xlsx files/'
-    #os.chdir(path)
+    path = '/home/iotsm/HttpServer_Andreas/moxyfiles/'
+    os.chdir(path)
     filename = entityName+'_'+start_time+'_'+end_time+'.xlsx'
    
     #address = "http://157.230.210.37:8081"
@@ -792,6 +795,7 @@ def main(argv):
         [summary,side] = read_data(devid,acc_token,address, start_time, end_time, interval, descriptors,tmzn)
         #summary = summary.iloc[:-1]
         if summary.empty==False:
+            month_Name = calendar.month_name[summary.index[0].month]
             new_row = {'Power meter':label, 'Total consumed energy (kWh)':summary['Total Consumed energy (kWh)'].sum()}
             sum_nrg = sum_nrg.append(new_row, ignore_index = True)
             
@@ -815,7 +819,7 @@ def main(argv):
                 daily_stats(summary,label,color)
                 MaxPwr(summary,label)
     
-    month_Name = calendar.month_name[summary.index[0].month]
+    
     print('Month:',month_Name)
     EnPis(dftotal,dfair,occ)
 
@@ -832,8 +836,7 @@ def main(argv):
     
     # Create pdf
     filename='Moxy_'+str(month_Name)+'_report.pdf'
-    path = '/home/iotsm/HttpServer_Andreas/serverFiles/'
-    os.chdir(path)
+    
     
     
     create_pdf(path, filename, month_Name)
