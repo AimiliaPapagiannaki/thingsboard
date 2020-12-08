@@ -40,21 +40,28 @@ def conv_to_consumption(df, interval,Amin,Bmin,Cmin):
             #df.loc[df[nrg]>1000000000,nrg] = np.nan
             tmp = df[[nrg]].copy()
             tmp = tmp.dropna()
+            
+            
+            
+            
             tmp['diff'] = np.nan
             tmp['diff'] = tmp[nrg] - tmp[nrg].shift()
-            tmp = tmp[['diff']]
-            df = pd.concat([df,tmp],axis=1)
+            tmp = tmp[['diff',nrg]]
+            
+            
+            #df = pd.concat([df,tmp],axis=1)
 
             #df.loc[((df[nrg].isna() == False) & (df[nrg].shift().isna() == False)),'diff'] = df[nrg] - df[nrg].shift()
             
-            df.loc[df['diff']>100000000,['diff',nrg]] = np.nan
-            df.loc[df['diff']<0, 'diff'] = df.loc[df['diff']<0, 'diff'].values+df.loc[df['diff'].shift(-1)<0,nrg].values
-            df.loc[np.abs(df['diff'])>100000000,['diff',nrg]] = np.nan
+            tmp.loc[tmp['diff']>100000000,['diff',nrg]] = np.nan
+            tmp.loc[tmp['diff']<(-200), 'diff'] = tmp.loc[tmp['diff']<(-200), 'diff'].values+tmp.loc[tmp['diff'].shift(-1)<(-200),nrg].values
+            tmp.loc[np.abs(tmp['diff'])>100000000,['diff',nrg]] = np.nan
 			
             #print(df.loc[np.abs(df['diff'])>100000000,['diff',nrg]])
-            df['diff'].iloc[0] = firstdif
+            tmp['diff'].iloc[0] = firstdif
             
             df.drop([nrg], axis=1, inplace=True)
+            df = pd.concat([df,tmp['diff']],axis=1)
             df.rename(columns={"diff": nrg}, inplace = True)
             
             
@@ -91,7 +98,7 @@ def align_resample(df, interval,tmzn):
     if inter<1:inter = 1
     del tmpdf
     
-    df.index = df.index.round(str(inter) + 'T')
+    #df.index = df.index.round(str(inter) + 'T')
     
     
     #############################
@@ -317,6 +324,7 @@ def read_data(devid, acc_token, address, start_time, end_time, interval, descrip
             cols = df.columns.tolist()
             cols = cols[-2:]+cols[:-2]
             df = df[cols]
+            df = df.iloc[1:]
             
         else:
             df = pd.DataFrame([])
@@ -326,6 +334,110 @@ def read_data(devid, acc_token, address, start_time, end_time, interval, descrip
         side = ' '
         print('Empty json!')
     return df,side
+
+
+def get_harmonics(start_time, end_time, devid, acc_token, interval, address,tmzn):
+    
+    start_time = str(int(start_time) + int(5*60000))
+    r2 = requests.get(url=address + "/api/plugins/telemetry/DEVICE/" + devid + "/values/timeseries?keys=ihd03A,ihd05A,ihd07A,ihd03B,ihd05B,ihd07B,ihd03C,ihd05C,ihd07C&startTs=" + start_time + "&endTs=" + end_time + "&agg=NONE&limit=1000000",headers={'Content-Type': 'application/json', 'Accept': '*/*', 'X-Authorization': acc_token}).json()
+    
+    dfH = pd.DataFrame([])
+    if len(r2.keys())>0:
+        print(r2.keys())
+        # read all descriptors at once
+        for desc in r2.keys():
+            df1 = pd.DataFrame(r2[desc])
+            df1.set_index('ts', inplace=True)
+            df1.columns = [str(desc)]
+            dfH = pd.concat([dfH,df1], axis = 1)
+        
+        if dfH.empty == False:
+        
+            dfH.reset_index(drop=False, inplace=True)
+            dfH['ts'] = pd.to_datetime(dfH['ts'], unit='ms')
+            
+            # Set timestamp as index, convert all columns to float
+            dfH = dfH.sort_values(by=['ts'])
+            dfH['ts'] = dfH['ts'].dt.tz_localize('utc').dt.tz_convert(tmzn)
+            dfH.reset_index(drop=True, inplace=True)
+            dfH.set_index('ts',inplace = True,drop=True)
+            for col in dfH.columns:
+                dfH[col] = dfH[col].astype('float')
+        
+        dfH['ts'] = dfH.index
+        dfH['Date'] = [d.date() for d in dfH['ts']]
+        dfH['Time '+tmzn] = [d.time() for d in dfH['ts']]
+        dfH = dfH.drop('ts',axis = 1)
+        
+        # change order of columns
+        cols = dfH.columns.tolist()
+        cols = cols[-2:]+cols[:-2]
+        dfH = dfH[cols]
+        dfH = dfH.iloc[1:]
+        
+        print(dfH)
+    return dfH
+    
+
+def fetch_tmp(start_time, end_time, assetid, acc_token, interval, address,tmzn):
+
+
+    mapping={}
+    mapping['tmp'] = 'Temperature (Celsius)'
+    mapping['clhmd'] = 'Humidity \%'
+
+    r3 = requests.get(
+        url= address + "/api/plugins/telemetry/ASSET/"+ assetid +"/values/timeseries?keys=tmp,clhmd&startTs=" + start_time + "&endTs=" + end_time + "&agg=NONE&limit=300000",
+        headers={'Content-Type': 'application/json', 'Accept': '*/*', 'X-Authorization': acc_token}).json()
+    
+    dfT = pd.DataFrame([])
+    if len(r3.keys())>0:
+        
+        # read all descriptors at once
+        for desc in r3.keys():
+            df1 = pd.DataFrame(r3[desc])
+            df1.set_index('ts', inplace=True)
+            df1.columns = [mapping.get(str(desc))]
+            dfT = pd.concat([dfT,df1], axis = 1)
+        
+        if dfT.empty == False:
+        
+            dfT.reset_index(drop=False, inplace=True)
+            dfT['ts'] = pd.to_datetime(dfT['ts'], unit='ms')
+            
+            # Set timestamp as index, convert all columns to float
+            dfT = dfT.sort_values(by=['ts'])
+            dfT['ts'] = dfT['ts'].dt.tz_localize('utc').dt.tz_convert(tmzn)
+            dfT.reset_index(drop=True, inplace=True)
+            dfT.set_index('ts',inplace = True,drop=True)
+            for col in dfT.columns:
+                dfT[col] = dfT[col].astype('float')
+                
+                
+        if int(interval)>=1440:
+            res = 'D'
+        else:
+            res = str(interval)+'T'
+        dfT = dfT.resample(res).mean()
+        for col in dfT.columns:
+            dfT[col] = dfT[col].round(2)
+        
+        dfT['ts'] = dfT.index
+        dfT['Date'] = [d.date() for d in dfT['ts']]
+        dfT['Time '+tmzn] = [d.time() for d in dfT['ts']]
+        dfT = dfT.drop('ts',axis = 1)
+        
+        # change order of columns
+        cols = dfT.columns.tolist()
+        cols = cols[-2:]+cols[:-2]
+        dfT = dfT[cols]
+        dfT = dfT.iloc[1:]
+        
+        print(dfT)
+        
+    return dfT
+        
+
 
 def postproc(df):
     if ('Voltage A' in df.columns) and ('SVoltage A' in df.columns):
@@ -379,7 +491,8 @@ def main(argv):
     
     r = requests.post(address + "/api/auth/login",json={'username': 'meazon@thingsboard.org', 'password': 'meazon'}).json()
 
-
+    start_time = str(int(start_time)- (5*60000))
+    
     # acc_token is the token to be used in the next request
     acc_token = 'Bearer' + ' ' + r['token']
 
@@ -389,6 +502,9 @@ def main(argv):
                                    'X-Authorization': acc_token}).json()
         sum_nrg = pd.DataFrame([])
         with pd.ExcelWriter(filename) as writer:
+        
+            
+            
             for device in r1:
 
                 # read ID and name of building's devices
@@ -396,9 +512,33 @@ def main(argv):
                 devName = str(device['toName'])
                 print(devName)
 
+                ##################################################################################
+                if entityID == 'ed73a120-f73b-11e9-b4dc-013e65d2f65e': # if building is moxy
+                    r2 = requests.get(url=address + '/api/device/'+devid,
+                          headers = {'Content-Type': 'application/json', 'Accept': '*/*',
+                                                         'X-Authorization': acc_token}).json()                                    
+                                                         
+                    label = str(r2['label'])
+                    label = label.replace('-','_')
+                    label = label.replace(' ','_')
+                    
+                    label=label[7:]
+                    label = label.replace('_','')
+                    devName=label
+                    
+                ##################################################################################
                 #print('devname:',devName)
                 [summary,side] = read_data(devid,acc_token,address, start_time, end_time, interval, descriptors,tmzn)
-
+                
+                # if panitsas get harmonics
+                if entityID == '10cec210-d129-11e8-9e11-dd47b1d84573':
+                    if devid=='902a5580-6938-11ea-9788-2bd444f36b4e': # 052
+                        dfH52 = get_harmonics(start_time, end_time, devid, acc_token, interval, address,tmzn)
+                        
+                    elif devid=='803e6800-6938-11ea-9788-2bd444f36b4e': # 053
+                        dfH53 = get_harmonics(start_time, end_time, devid, acc_token, interval, address,tmzn)
+                    
+                
                 if summary.empty==False:
                     summary = postproc(summary)
                     if (int(interval)==1440 and tmzn=='America/Chicago'):
@@ -416,12 +556,12 @@ def main(argv):
                         sum_nrg.to_excel(writer,sheet_name = 'Summary', index = False)                
                     
                     
-                    if ((summary.index[0]<=pd.to_datetime(start_time,unit='ms').tz_localize('utc').tz_convert(tmzn)) & (side=='right')):
-                        print('first row smaller than start time')
-                        summary = summary.iloc[1:]
-                    elif ((summary.index[-1]>pd.to_datetime(end_time,unit='ms').tz_localize('utc').tz_convert(tmzn)) & (side=='left')):
-                        print('last row bigger than end time')
-                        summary = summary.iloc[:-1]
+                    #if ((summary.index[0]<=pd.to_datetime(start_time,unit='ms').tz_localize('utc').tz_convert(tmzn)) & (side=='right')):
+                    #    print('first row smaller than start time')
+                    #    summary = summary.iloc[1:]
+                    #elif ((summary.index[-1]>pd.to_datetime(end_time,unit='ms').tz_localize('utc').tz_convert(tmzn)) & (side=='left')):
+                    #    print('last row bigger than end time')
+                    #    summary = summary.iloc[:-1]
                     
                     if entityID == 'ed73a120-f73b-11e9-b4dc-013e65d2f65e': # if building is moxy, don't write separate A,B,C columns
                         if 'Average active power A (kW)' in summary.columns:
@@ -452,12 +592,24 @@ def main(argv):
                             summary = summary.drop(['Estimated consumed energy (kWh) C'],axis=1)
                     
                     devName = devName.replace(':','')
-                    summary.to_excel(writer,sheet_name = devName, index = False)
+   
+                    summary.to_excel(writer,sheet_name = devName, index = False, engine = 'xlsxwriter')
+                    
                 else:
-                    df = pd.DataFrame({'There are no measurements for the selected period':[]})
+                    summary = pd.DataFrame({'There are no measurements for the selected period':[]})
                     devName = devName.replace(':','')
-                    df.to_excel(writer,sheet_name = devName, index = False)
-                
+
+                    summary.to_excel(writer,sheet_name = devName, index = False)
+
+            if entityID == 'ed73a120-f73b-11e9-b4dc-013e65d2f65e':
+                assetid = 'ed73a120-f73b-11e9-b4dc-013e65d2f65e'
+                dfT = fetch_tmp(start_time, end_time, assetid, acc_token, interval,address,tmzn)
+                if not dfT.empty:
+                    dfT.to_excel(writer,sheet_name = 'Temperature_Humidity', index = False, engine = 'xlsxwriter')
+            if not dfH52.empty:
+                dfH52.to_excel(writer,sheet_name = 'Harmonics_102.402.000052', index = False, engine = 'xlsxwriter')
+            if not dfH53.empty:
+                dfH53.to_excel(writer,sheet_name = 'Harmonics_102.402.000053', index = False, engine = 'xlsxwriter')
         writer.save()
         writer.close()
     else:
@@ -474,12 +626,12 @@ def main(argv):
             if (int(interval)==1440 and tmzn=='America/Chicago'):
                 summary = summary.iloc[1:]
             
-            if ((summary.index[0]<=pd.to_datetime(start_time,unit='ms').tz_localize('utc').tz_convert(tmzn)) & (side=='right')):
-                print('first row smaller than start time')
-                summary = summary.iloc[1:]
-            elif ((summary.index[-1]>pd.to_datetime(end_time,unit='ms').tz_localize('utc').tz_convert(tmzn)) & (side=='left')):
-                print('last row bigger than end time')
-                summary = summary.iloc[:-1]
+            #if ((summary.index[0]<=pd.to_datetime(start_time,unit='ms').tz_localize('utc').tz_convert(tmzn)) & (side=='right')):
+            #    print('first row smaller than start time')
+            #    summary = summary.iloc[1:]
+            #elif ((summary.index[-1]>pd.to_datetime(end_time,unit='ms').tz_localize('utc').tz_convert(tmzn)) & (side=='left')):
+            #    print('last row bigger than end time')
+            #    summary = summary.iloc[:-1]
             
             with pd.ExcelWriter(filename) as writer:
                 if ((summary.index[0]<=pd.to_datetime(start_time,unit='ms').tz_localize('utc').tz_convert(tmzn)) & (side=='right')):
