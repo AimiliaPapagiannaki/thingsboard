@@ -20,18 +20,20 @@ import time
 def fill_dropped_nrg(df, nrg,interval):
     df['Timestamp'] = df.index
     for cnrg in nrg:
-        dfnew = df[np.isfinite(df[cnrg])].copy()
-        dropped = dfnew[dfnew[cnrg] < dfnew[cnrg].shift()]
-
-        if dropped.empty == False:
-            # keep endpoint of range of reseted values
-            dropped['endpoint1'] = dfnew.index[dfnew[cnrg] > dfnew[cnrg].shift(-1)]
-
-            # shift endpoints to match starting points and set last endpoint as the last instance of df
-            dropped['endpoint'] = dropped['endpoint1'].shift(-1)
-            dropped['endpoint'].iloc[-1] = df.index[-1]
-
-            dropped.apply((lambda x: correct_dropped(x, cnrg, df,interval)), axis=1)
+        if cnrg in df.columns:
+            dfnew = df[np.isfinite(df[cnrg])].copy()
+            print(dfnew.shape)
+            dropped = dfnew[dfnew[cnrg] < dfnew[cnrg].shift()]
+    
+            if dropped.empty == False:
+                # keep endpoint of range of reseted values
+                dropped['endpoint1'] = dfnew.index[dfnew[cnrg] > dfnew[cnrg].shift(-1)]
+    
+                # shift endpoints to match starting points and set last endpoint as the last instance of df
+                dropped['endpoint'] = dropped['endpoint1'].shift(-1)
+                dropped['endpoint'].iloc[-1] = df.index[-1]
+    
+                dropped.apply((lambda x: correct_dropped(x, cnrg, df,interval)), axis=1)
     
     df.drop('Timestamp',axis=1,inplace=True)
 
@@ -86,18 +88,27 @@ def conv_to_consumption(ndf, interval,Amin,Bmin,Cmin):
         df['total'] = df['Consumed energy (kWh) A'] + df['Consumed energy (kWh) B'] + df['Consumed energy (kWh) C']
         df.rename(columns={"total": "Total Consumed energy (kWh)"}, inplace = True)
         ndf = pd.concat([ndf,df[['Total Consumed energy (kWh)']]],axis = 1)
+    elif ('Consumed energy (kWh) A' in df.columns):
+         df['total'] = df['Consumed energy (kWh) A']
+         df.rename(columns={"total": "Total Consumed energy (kWh)"}, inplace = True)
+         ndf = pd.concat([ndf,df[['Total Consumed energy (kWh)']]],axis = 1)
+    
+    
     print('df after consumption:',ndf.tail())
     return ndf
 
 def align_resample(df, interval,tmzn):
 
     #df.index = df.index.map(lambda x: x.replace(second=0, microsecond=0))
+    
     df = df.groupby(df.index).max()
     df.index = df.index.ceil('5T')
     df =  df .resample('5T',label = 'right',closed = 'right').max()
+    print('df after resample right:',df.head())
     
   #############################
-    df = fill_dropped_nrg(df, ['cnrgA', 'cnrgB', 'cnrgC'],5)	
+    if 'cnrgA' in df.columns:
+        df = fill_dropped_nrg(df, ['cnrgA', 'cnrgB', 'cnrgC'],5)	
  ###########################
  
     if ('cnrgA' in df.columns):  
@@ -129,10 +140,14 @@ def align_resample(df, interval,tmzn):
     df['ts'] = df['ts'].dt.tz_localize('utc').dt.tz_convert(tmzn)
     df.reset_index(drop=True, inplace=True)
     df.set_index('ts',inplace = True, drop = True)
-    if int(interval)>=1440:
+    if int(interval)==1440:
       res='D'
       side = 'left'
       closed='left'
+    elif int(interval)==43200:
+      res='M'
+      side = 'right'
+      closed='right'
     else:
       res=interval+'T'
       side = 'left'
@@ -141,8 +156,11 @@ def align_resample(df, interval,tmzn):
     if (('cnrgA' in df.columns) and ('cnrgB' in df.columns) and ('cnrgC' in df.columns)):
       df_nrg = df.resample(res,label = side,closed = closed).max().copy()
       df_nrg = df_nrg[['cnrgA','cnrgB','cnrgC']]
+    elif 'cnrgA' in df.columns:
+        df_nrg = df.resample(res,label = side,closed = closed).max().copy()
+        df_nrg = df_nrg[['cnrgA']]
       
-      
+    print('df_nrg resample:',df_nrg.head(15))
 	
     if (('Average active power A (kW)' in df.columns) and ('Average active power C (kW)' in df.columns) and ('Average active power B (kW)' in df.columns)):
       df_demand = df.resample(res,label=side, closed=closed).max().copy()
@@ -160,6 +178,9 @@ def align_resample(df, interval,tmzn):
     if (('cnrgA' in df.columns) and ('cnrgB' in df.columns) and ('cnrgC' in df.columns)):
       df = df.drop(['cnrgA','cnrgB','cnrgC'],axis = 1)
       df = pd.concat([df,df_nrg], axis = 1)
+    elif 'cnrgA' in df.columns:
+        df = df.drop('cnrgA',axis = 1)
+        df = pd.concat([df,df_nrg], axis = 1)
    
    
     return df,Amin,Bmin,Cmin
@@ -171,7 +192,7 @@ def read_data(devid, acc_token, address, start_time, end_time, interval, descrip
         headers={'Content-Type': 'application/json', 'Accept': '*/*', 'X-Authorization': acc_token}).json()
     if r2:
         df = pd.DataFrame([])
-
+        
         if 'pwrA' in r2.keys():
             df1 = pd.DataFrame(r2['pwrA'])
             df1.set_index('ts', inplace=True)
@@ -273,6 +294,7 @@ def read_data(devid, acc_token, address, start_time, end_time, interval, descrip
             df13.set_index('ts', inplace=True)
             df13.columns = ['cnrgA']
             df = pd.concat([df,df13], axis=1)
+            
             del df13
 
         if 'cnrgB' in r2.keys():
@@ -316,7 +338,7 @@ def read_data(devid, acc_token, address, start_time, end_time, interval, descrip
             df19.columns = ['Power factor C']
             df = pd.concat([df,df19], axis=1)
             del df19
-
+        
         if df.empty == False:
         
             df.reset_index(drop=False, inplace=True)
@@ -365,7 +387,7 @@ def main(argv):
     entityID = str(argv[2])
     reportID = str(argv[3])
     stime = str(argv[4])
-    start_time = str(int(argv[4])-301000)
+    start_time = str(int(argv[4])-599000) #301000
     end_time = str(argv[5]) 
     interval = str(argv[6])
     descriptors = str(argv[7])
@@ -376,10 +398,7 @@ def main(argv):
     path = path+'/'
     os.chdir(path)
     filename = entityName+'_'+stime+'_'+end_time+'.xlsx'
-
-    
-    
-    
+  
 
     #address = "http://157.230.210.37:8081"
     address = "http://localhost:8080"
