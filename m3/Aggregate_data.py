@@ -15,12 +15,42 @@ from dateutil.relativedelta import relativedelta
 from dateutil.tz import gettz
 import timeit
 import pytz
+
+import smtplib
+from email.message import EmailMessage
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
+from email.mime.base import MIMEBase
+from email import encoders
 # from datetime import datetime
 
 #address = "https://m3.meazon.com"
 address = "http://localhost:8080"
 
-
+def send_email(email_recipient, email_subject, email_message):
+    email_sender = 'a.papagiannaki@meazon.com'
+    try:
+        msg = MIMEMultipart()
+        msg['From'] = email_sender
+        msg['To'] = email_recipient[0]
+        msg['Subject'] = email_subject
+    
+        msg.attach(MIMEText(email_message, 'plain'))
+    
+        
+    
+        server = smtplib.SMTP('smtp-mail.outlook.com', 587)
+        server.ehlo()
+        server.starttls()
+        server.login('a.papagiannaki@meazon.com', '2817emily!')
+        text = msg.as_string()
+        server.sendmail(email_sender, email_recipient, text)
+        print('email sent')
+        server.quit()
+    except:
+        print("SMPT server connection error")
+    return True
+    
 
 def align_resample(df, cnrg,pwr,rpwr,frun,pvind,pvser):
 
@@ -41,9 +71,11 @@ def align_resample(df, cnrg,pwr,rpwr,frun,pvind,pvser):
     if pvind==1:
         if pvser=='102.402.000110':
             for pr in pwr:
-                df[pr] = -df[pr]
+                if pr in df.columns:
+                    df[pr] = -df[pr]
             for rpr in rpwr:
-                df[rpr] = -df[rpr]
+                if rpr in df.columns:
+                    df[rpr] = -df[rpr]
             
     # identify report interval and round to closest minute
     #tmpdf = pd.DataFrame(df[df.columns[0]].dropna())
@@ -538,9 +570,10 @@ def main():
             if energy.empty:
                 with open('/home/iotsm/Analytics/jsonfiles/cnrgjson.json') as f:
                     tmpdict = json.load(f)
+                    print('tmpdict:',tmpdict)
                 cnrgdict[devName] = tmpdict[devName]
             else:
-                cnrgdict[devName] = energy['totalCnrg'].iloc[-1]
+                cnrgdict[devName] = energy['totalCnrg'].max()
                     
             
         print(energy.tail())
@@ -563,7 +596,11 @@ def main():
                 #dfglob = pd.concat([dfglob, energy]).groupby(level=0).sum()
                 
             else:
-                dfglob['totalCnrg'].iloc[-1] = dfglob['totalCnrg'].iloc[-1] + tmpdict[devName]
+                if not dfglob.empty:
+                    print('Empty series!Add previously stored cnrg:',dfglob['totalCnrg'].iloc[-1] + tmpdict[devName])
+                    dfglob['totalCnrg'].iloc[-1] = dfglob['totalCnrg'].iloc[-1] + tmpdict[devName]
+                else:
+                    dfglob['totalCnrg'] = tmpdict[devName]
             print('dfglob contat tail:',dfglob.tail())
             
     
@@ -615,13 +652,20 @@ def main():
         print('OLD DF:',df)
         df = df.iloc[-1:]
         
-        print('Old totalCnrg is:',df['totalCnrg'].values)    
+           
     if dfglob.empty == False:
         
         if frun==0:
             print('old cnrg was:',df['totalCnrg'])
             print('new total cnrg:',dfglob['totalCnrg'])
-        
+            
+            # If new energy is smaller send alarm via email
+            if (dfglob['totalCnrg'].values<df['totalCnrg'].values):
+                ## send email to recipient
+                sbj =  'Negative energy alarm'
+                msg = 'Negative energy in DEH. \n'
+                recipients = ['a.papagiannaki@meazon.com']
+                send_email(recipients,sbj,msg)
         # transform dfs
         print()
         mydict = transform_df(dfglob)
