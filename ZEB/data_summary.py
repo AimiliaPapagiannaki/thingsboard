@@ -23,8 +23,10 @@ def fill_dropped_nrg(df, nrg,interval):
         if cnrg in df.columns:
             dfnew = df[np.isfinite(df[cnrg])].copy()
             print(dfnew.shape)
+            
+            
             dropped = dfnew[dfnew[cnrg] < dfnew[cnrg].shift()]
-    
+            print('DROPPED:',dropped)
             if dropped.empty == False:
                 # keep endpoint of range of reseted values
                 dropped['endpoint1'] = dfnew.index[dfnew[cnrg] > dfnew[cnrg].shift(-1)]
@@ -43,10 +45,12 @@ def fill_dropped_nrg(df, nrg,interval):
 def correct_dropped(row, cnrg, df,interval):
     #df[cnrg].loc[row.Timestamp:row.endpoint] = np.sum([df[cnrg], df[cnrg].loc[row.endpoint1]])
     if df[cnrg].loc[row.Timestamp]>df[cnrg].loc[row.endpoint1-timedelta(minutes = interval)]:
+        #print('ENTERED FIRST IF')
         df[cnrg].loc[row.endpoint1] = df[cnrg].loc[row.Timestamp]
     else:
+        #print('before correction',np.sum([df[cnrg], np.abs(df[cnrg].loc[row.endpoint1]-df[cnrg].loc[row.Timestamp])]))
         df[cnrg].loc[row.Timestamp:row.endpoint] = np.sum([df[cnrg], np.abs(df[cnrg].loc[row.endpoint1]-df[cnrg].loc[row.Timestamp])])
-        
+        #print('after correction',df[cnrg].loc[row.Timestamp:row.endpoint])
         
 def conv_to_consumption(ndf, interval,Amin,Bmin,Cmin):
     df = ndf.copy()
@@ -61,7 +65,7 @@ def conv_to_consumption(ndf, interval,Amin,Bmin,Cmin):
         df.rename(columns={"diffA": "Consumed energy (kWh) A"}, inplace = True)
         ndf.drop(['cnrgA'], axis=1, inplace=True)
         ndf = pd.concat([ndf,df[['Consumed energy (kWh) A']]],axis = 1)
-
+        print('df A:',df.head())
 
     if 'cnrgB' in df.columns:
         firstdif = df['cnrgB'].iloc[0]-Bmin
@@ -94,14 +98,27 @@ def conv_to_consumption(ndf, interval,Amin,Bmin,Cmin):
          ndf = pd.concat([ndf,df[['Total Consumed energy (kWh)']]],axis = 1)
     
     
-    print('df after consumption:',ndf.tail())
+    #print('df after consumption:',ndf.tail())
     return ndf
 
 def align_resample(df, interval,tmzn):
 
     #df.index = df.index.map(lambda x: x.replace(second=0, microsecond=0))
     
+    
+    #############################################
+    # if next value is smaller, but next-previous is still cumulative, consider it a spike and make it nan -->positive spike
+    #df.sort_index(inplace=True)
+    
+    #df.dropna().loc[(((df['cnrgA'].shift(-1)-df['cnrgA'])<(0)) & ((df['cnrgA'].shift(-1)-df['cnrgA'].shift())>=0)),'cnrgA'] = df['cnrgA'].shift()
+    #df.dropna().loc[(((df['cnrgB'].shift(-1)-df['cnrgB'])<(0)) & ((df['cnrgB'].shift(-1)-df['cnrgB'].shift())>=0)),'cnrgB'] = df['cnrgB'].shift()
+    #df.dropna().loc[(((df['cnrgC'].shift(-1)-df['cnrgC'])<(0)) & ((df['cnrgC'].shift(-1)-df['cnrgC'].shift())>=0)),'cnrgC'] = df['cnrgC'].shift()
+    
+    
+    ##############################################
+    
     df = df.groupby(df.index).max()
+    
     df.index = df.index.ceil('5T')
     df =  df .resample('5T',label = 'right',closed = 'right').max()
     print('df after resample right:',df.head())
@@ -127,7 +144,7 @@ def align_resample(df, interval,tmzn):
     
    # df = df.groupby(df.index).max()
    # df.sort_index(inplace=True)
-    df = df.iloc[1:]
+    #df = df.iloc[1:]
     
     
     ##########set timezone
@@ -160,7 +177,7 @@ def align_resample(df, interval,tmzn):
         df_nrg = df.resample(res,label = side,closed = closed).max().copy()
         df_nrg = df_nrg[['cnrgA']]
       
-    print('df_nrg resample:',df_nrg.head(15))
+    
 	
     if (('Average active power A (kW)' in df.columns) and ('Average active power C (kW)' in df.columns) and ('Average active power B (kW)' in df.columns)):
       df_demand = df.resample(res,label=side, closed=closed).max().copy()
@@ -181,7 +198,7 @@ def align_resample(df, interval,tmzn):
     elif 'cnrgA' in df.columns:
         df = df.drop('cnrgA',axis = 1)
         df = pd.concat([df,df_nrg], axis = 1)
-   
+    
    
     return df,Amin,Bmin,Cmin
 
@@ -350,12 +367,13 @@ def read_data(devid, acc_token, address, start_time, end_time, interval, descrip
             df.set_index('ts',inplace = True, drop = True)
             for col in df.columns:
                 df[col] = df[col].astype('float')
-    
+            print('df after download:',df.head())
             
             [df,Amin,Bmin,Cmin] = align_resample(df, interval,tmzn)
-            
+            print('df before consumption:',df.head())
             df = conv_to_consumption(df, interval,Amin,Bmin,Cmin)
-    
+            df = df.iloc[1:]
+            #print('df after consumption and resample:',df.head())
     
             if (('Average active power A (kW)' in df.columns) and ('Average active power C (kW)' in df.columns) and ('Average active power B (kW)' in df.columns)):
                 df['Total Average active power (kW)'] = df['Average active power A (kW)'] + df['Average active power B (kW)'] + df['Average active power C (kW)']
@@ -372,6 +390,7 @@ def read_data(devid, acc_token, address, start_time, end_time, interval, descrip
             cols = df.columns.tolist()
             cols = cols[-2:]+cols[:-2]
             df = df[cols]
+            df = df.dropna()
         else:
             df = pd.DataFrame([])
     else:
@@ -387,12 +406,12 @@ def main(argv):
     entityID = str(argv[2])
     reportID = str(argv[3])
     stime = str(argv[4])
-    start_time = str(int(argv[4])-599000) #301000
+    #start_time = str(int(argv[4])-599000) #301000
+    start_time = str(int(argv[4])-910000)
     end_time = str(argv[5]) 
     interval = str(argv[6])
     descriptors = str(argv[7])
     tmzn = str(argv[8])
-    
     path = '../xlsx files'
         
     path = path+'/'

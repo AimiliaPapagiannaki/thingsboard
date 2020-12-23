@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-
+# This version is a copy of multi_overflow.py where the problem of overflow is solved. Return to stable if anything comes up.
 import sys
 import pandas as pd
 import datetime
@@ -14,6 +14,7 @@ import timeit
 # from datetime import datetime
 from datetime import timedelta
 import time
+import base64
 
 
 ###########
@@ -47,7 +48,11 @@ def correct_dropped(row, cnrg, df,interval):
         df[cnrg].loc[row.Timestamp:row.endpoint] = np.sum([df[cnrg], np.abs(df[cnrg].loc[row.endpoint1]-df[cnrg].loc[row.Timestamp])])
 ###########################
 #
-def conv_to_consumption(df, interval, Amin, Bmin, Cmin):
+def conv_to_consumption(df, interval, Amin, Bmin, Cmin, overA, overB, overC, deltaA, deltaB, deltaC, tsA, tsB, tsC):
+    print('DELTAS:',deltaA,deltaB,deltaC)
+    #deltaA=0
+    #deltaB=0
+    #deltaC=0
     #     convert cumulative energy to consumed energy
     if 'cnrgA' in df.columns:
         firstdif = df['cnrgA'].iloc[0] - Amin
@@ -58,9 +63,21 @@ def conv_to_consumption(df, interval, Amin, Bmin, Cmin):
         
         tmp = df[['cnrgA']].copy()
         tmp = tmp.dropna()
-        print(tmp.head())
+        print(tmp)
         tmp['diffA'] = np.nan
         tmp['diffA'] = tmp['cnrgA'] - tmp['cnrgA'].shift()
+        
+        ################## If year per month
+        if ((int(interval)==2628000000) and overA!=0):
+            tmp.loc[(tmp.index.month==tsA+1) & (tmp['diffA']>0),'diffA'] = tmp['diffA']+ (overA/1000) - (deltaA/1000)
+            
+            ndf=tmp.loc[tmp.index.month==tsA+1].copy()
+            if ndf.empty:
+                tmp.loc[(tmp.index.month==tsA),'diffA'] = tmp['diffA']+(overA/1000)
+        ###################
+        
+        tmp.loc[tmp['diffA'].shift(-1)<0,'diffA'] = tmp.loc[tmp['diffA'].shift(-1)<0,'diffA'] + (deltaA/1000)
+        tmp.loc[tmp['diffA']<0,'diffA'] = tmp.loc[tmp['diffA']<0,'diffA'] + (overA/1000) - (deltaA/1000)
         tmp = tmp[['diffA']]
         
         df = pd.concat([df,tmp],axis=1)
@@ -77,9 +94,20 @@ def conv_to_consumption(df, interval, Amin, Bmin, Cmin):
         
         tmp = df[['cnrgB']].copy()
         tmp = tmp.dropna()
-        print(tmp.head())
+        print(tmp)
         tmp['diffB'] = np.nan
         tmp['diffB'] = tmp['cnrgB'] - tmp['cnrgB'].shift()
+        
+        ################## If year per month
+        if ((int(interval)==2628000000) and overB!=0):
+            tmp.loc[(tmp.index.month==tsB+1) & (tmp['diffB']>0),'diffB'] = tmp['diffB']+ (overB/1000) - (deltaB/1000)
+            
+            ndf=tmp.loc[tmp.index.month==tsB+1].copy()
+            if ndf.empty:
+                tmp.loc[(tmp.index.month==tsB),'diffB'] = tmp['diffB']+(overB/1000)
+        ###################
+        tmp.loc[tmp['diffB'].shift(-1)<0,'diffB'] = tmp.loc[tmp['diffB'].shift(-1)<0,'diffB'] + (deltaB/1000)
+        tmp.loc[tmp['diffB']<0,'diffB'] = tmp.loc[tmp['diffB']<0,'diffB'] + (overB/1000) - (deltaB/1000)
         tmp = tmp[['diffB']]
         
         df = pd.concat([df,tmp],axis=1)
@@ -96,9 +124,18 @@ def conv_to_consumption(df, interval, Amin, Bmin, Cmin):
         
         tmp = df[['cnrgC']].copy()
         tmp = tmp.dropna()
-        print(tmp.head())
         tmp['diffC'] = np.nan
         tmp['diffC'] = tmp['cnrgC'] - tmp['cnrgC'].shift()
+        ################## If year per month
+        if ((int(interval)==2628000000) and overC!=0):
+            tmp.loc[(tmp.index.month==tsC+1) & (tmp['diffC']>0),'diffC'] = tmp['diffC']+ (overC/1000) - (deltaC/1000)
+            
+            ndf=tmp.loc[tmp.index.month==tsC+1].copy()
+            if ndf.empty:
+                tmp.loc[(tmp.index.month==tsC),'diffC'] = tmp['diffC']+(overC/1000)
+        ###################
+        tmp.loc[tmp['diffC'].shift(-1)<0,'diffC'] = tmp.loc[tmp['diffC'].shift(-1)<0,'diffC'] + (deltaC/1000)
+        tmp.loc[tmp['diffC']<0,'diffC'] = tmp.loc[tmp['diffC']<0,'diffC'] + (overC/1000) - (deltaC/1000)
         tmp = tmp[['diffC']]
         
         df = pd.concat([df,tmp],axis=1)
@@ -140,12 +177,13 @@ def align_resample(df, interval, tmzn):
     
     #resample at given interval to round timestamp
     res = int(interval)/1000
-    
+    print(int(interval))
     if int(interval)==86400000:
         print('daily')
         df = df.resample('D', label='left').max()
-    #elif int(interval)==2592000000:
-        #df = df.resample('M', label='left').max()
+    elif int(interval)==2628000000:
+        print('Month')
+        df = df.resample('M', label='right',closed='right').max()
     else:
         df = df.resample(str(res)+'S', label='left').max()
    
@@ -159,7 +197,7 @@ def align_resample(df, interval, tmzn):
     return df, Amin, Bmin, Cmin
 
 
-def read_data(devid, acc_token, address, start_time, end_time, interval, descriptors, tmzn):
+def read_data(devid, acc_token, address, start_time, end_time, interval, descriptors, tmzn, yearmode):
 
     if descriptors == 'totalEnergy':
         descriptors = 'cnrgA,cnrgB,cnrgC'
@@ -167,17 +205,42 @@ def read_data(devid, acc_token, address, start_time, end_time, interval, descrip
         descriptors = 'pwrA,pwrB,pwrC'
     if descriptors == 'totalRP':
         descriptors = 'rpwrA,rpwrB,rpwrC'
-
-    if ('cnrgA' in descriptors) or ('cnrgB' in descriptors) or ('cnrgC' in descriptors):
-        aggfn = 'MAX'
+    
+    descriptors=descriptors+',overflA,overflB,overflC,difH_A,difH_B,difH_C,difD_A,difD_B,difD_C,difM_A,difM_B,difM_C'
+    print('descriptors:',descriptors)
+    msg = 'zeb_yearly_service:m3aZ0n_zeb_yearly'
+    msgb = msg.encode('ascii')
+    b64 = base64.b64encode(msgb)
+    
+    
+    if yearmode==1:
+        r2 = requests.post("http://localhost:9009/getYearEnergy", json={'devices': devid, 'year': start_time, 'keys': descriptors}, headers={"Accept": "application/json","Authorization":"Basic " + str(b64)[1:]}).json()
+        print(r2)
+        r2=r2[devid]
+        
+    
     else:
-        aggfn = 'AVG'
-
-    r2 = requests.get(
-        url=address + "/api/plugins/telemetry/DEVICE/" + devid + "/values/timeseries?keys=" + descriptors + "&startTs=" + start_time + "&endTs=" + end_time + "&interval="+interval+"&agg="+aggfn+"&limit=1000000",
-        headers={'Content-Type': 'application/json', 'Accept': '*/*', 'X-Authorization': acc_token}).json()
-
+    
+        if ('cnrgA' in descriptors) or ('cnrgB' in descriptors) or ('cnrgC' in descriptors):
+            aggfn = 'MAX'
+        else:
+            aggfn = 'AVG'
+    
+        r2 = requests.get(
+            url=address + "/api/plugins/telemetry/DEVICE/" + devid + "/values/timeseries?keys=" + descriptors + "&startTs=" + start_time + "&endTs=" + end_time + "&interval="+interval+"&agg="+aggfn+"&limit=1000000",
+            headers={'Content-Type': 'application/json', 'Accept': '*/*', 'X-Authorization': acc_token}).json()
+        
     if r2:
+        overA = 0
+        overB = 0
+        overC = 0
+        deltaA = 0
+        deltaB = 0
+        deltaC = 0
+        tsA=0
+        tsB=0
+        tsC=0
+        print(r2.keys())
         df = pd.DataFrame([])
         if 'pwrA' in r2.keys():
             df1 = pd.DataFrame(r2['pwrA'])
@@ -254,8 +317,43 @@ def read_data(devid, acc_token, address, start_time, end_time, interval, descrip
             df15.columns = ['cnrgC']
             df = pd.concat([df, df15], axis=1)
             del df15
-
-
+        if 'overflA' in r2.keys():
+            overA = float(r2['overflA'][0]['value'])
+            if interval=='3600000': # if Hour interval
+                deltaA = float(r2['difH_A'][0]['value'])
+            elif interval=='86400000': # if Day interval
+                deltaA = float(r2['difD_A'][0]['value'])
+            elif interval=='2628000000': # if Month interval
+                deltaA = float(r2['difM_A'][0]['value'])
+                tsA = int(r2['difM_A'][0]['ts'])
+                tsA = int(datetime.datetime.fromtimestamp(tsA/1000, pytz.timezone(tmzn)).strftime('%m'))
+                print('Month with overflow:',tsA)
+            print(overA, deltaA)
+            
+        if 'overflB' in r2.keys():
+            overB = float(r2['overflB'][0]['value'])
+            if interval=='3600000': # if Hour interval
+                deltaB = float(r2['difH_B'][0]['value'])
+            elif interval=='86400000': # if Day interval
+                deltaB = float(r2['difD_B'][0]['value'])
+            elif interval=='2628000000': # if Month interval
+                deltaB = float(r2['difM_B'][0]['value'])
+                tsB = int(r2['difM_B'][0]['ts'])
+                tsB = int(datetime.datetime.fromtimestamp(tsB/1000, pytz.timezone(tmzn)).strftime('%m'))
+            print(overB, deltaB)
+                
+        if 'overflC' in r2.keys():
+            overC = float(r2['overflC'][0]['value'])
+            if interval=='3600000': # if Hour interval
+                deltaC = float(r2['difH_C'][0]['value'])
+            elif interval=='86400000': # if Day interval
+                deltaC = float(r2['difD_C'][0]['value'])
+            elif interval=='2628000000': # if Month interval
+                deltaC = float(r2['difM_C'][0]['value'])
+                tsC = int(r2['difM_C'][0]['ts'])
+                tsC = int(datetime.datetime.fromtimestamp(tsC/1000, pytz.timezone(tmzn)).strftime('%m'))
+            print(overC, deltaC)
+        print(df)
         if df.empty == False:
 
             df.reset_index(drop=False, inplace=True)
@@ -269,7 +367,7 @@ def read_data(devid, acc_token, address, start_time, end_time, interval, descrip
                 df[col] = df[col].astype('float')
             print('values after reading:',df.head())
             [df, Amin, Bmin, Cmin] = align_resample(df, interval, tmzn)
-            df = conv_to_consumption(df, interval, Amin, Bmin, Cmin)
+            df = conv_to_consumption(df, interval, Amin, Bmin, Cmin, overA, overB, overC, deltaA, deltaB, deltaC, tsA, tsB, tsC)
             
             if (('Average active power A (kW)' in df.columns) and ('Average active power B (kW)' in df.columns) and (
             'Average active power C (kW)' in df.columns)):
@@ -337,13 +435,21 @@ def main(argv):
           devName = devName.replace('"', '')
                 #devName = devName[:30]
           descriptors = devargs[2]
-          start_time = str(int(devargs[3]) - int(interval))
+          
+          yearmode=0
+          # if year per month
+          if len(str(devargs[3]))==4:
+              yearmode=1
+              start_time = str(devargs[3])
+              print('Year:',start_time)
+          else:
+              start_time = str(int(devargs[3]) - int(interval))
           print('start time is:',start_time)
           end_time = devargs[4]
           #devName = devName+str(i)
           print('devname:',devName)
     
-          df = read_data(devid, acc_token, address, start_time, end_time, interval, descriptors, tmzn)
+          df = read_data(devid, acc_token, address, start_time, end_time, interval, descriptors, tmzn, yearmode)
           print('ncol before:',ncol)
           if df.empty == False:
               df.columns=[str(devName)]
@@ -357,7 +463,8 @@ def main(argv):
               cols = summary.columns.tolist()
               cols = cols[-2:] + cols[:-2]
               summary = summary[cols]
-              summary = summary.iloc[:-1]
+              if yearmode==0:
+                  summary = summary.iloc[:-1]
               summary.to_excel(writer, index=False, startcol=ncol)
               
               
