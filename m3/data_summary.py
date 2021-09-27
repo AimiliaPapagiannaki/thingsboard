@@ -24,7 +24,7 @@ def conv_to_consumption(df, interval,Amin,Bmin,Cmin):
     
     energies = ['Consumed energy (kWh) A','Consumed energy (kWh) B','Consumed energy (kWh) C','Estimated consumed energy (kWh) A','Estimated consumed energy (kWh) B','Estimated consumed energy (kWh) C']
     mins = [Amin,Bmin,Cmin]
-   
+    
     for nrg in energies:
         
         if nrg in df.columns:
@@ -60,6 +60,7 @@ def conv_to_consumption(df, interval,Amin,Bmin,Cmin):
             #print(df.loc[np.abs(df['diff'])>100000000,['diff',nrg]])
             tmp['diff'].iloc[0] = firstdif
             
+            
             df.drop([nrg], axis=1, inplace=True)
             df = pd.concat([df,tmp['diff']],axis=1)
             df.rename(columns={"diff": nrg}, inplace = True)
@@ -90,12 +91,19 @@ def conv_to_consumption(df, interval,Amin,Bmin,Cmin):
 def align_resample(df, interval,tmzn):
    
     # identify report interval and round to closest minute
+    
     tmpdf = pd.DataFrame(df[df.columns[0]].dropna())
     tmpdf['minutes'] = tmpdf.index.minute
     
     tmpdf['interv'] = tmpdf['minutes'].shift(-1) - tmpdf['minutes']
     inter = int(tmpdf['interv'].value_counts().idxmax())
-    if inter<1:inter = 1
+    
+    if inter<1:
+        inter = 1
+    elif inter>int(interval): # If the user selects smaller interval than the report interval, then apply the report interval
+        interval=str(inter)
+        print('interval asked is smaller, new interval is ',interval)
+    
     del tmpdf
     
     #df.index = df.index.round(str(inter) + 'T')
@@ -156,7 +164,11 @@ def align_resample(df, interval,tmzn):
     # resample df to given interval 
     if (('Consumed energy (kWh) A' in df.columns) or ('Consumed energy (kWh) B' in df.columns) or ('Consumed energy (kWh) C' in df.columns)):
           df = conv_to_consumption(df, interval,Amin,Bmin,Cmin)
-          df_nrg = df.resample(res,label = side,closed = side).sum().copy()
+          
+          # Significant fix so that if consequtive cnrg is nan, empty cells will appear and not 0
+          #df_nrg = df.resample(res,label = side,closed = side).sum().copy()
+          df_nrg = df.resample(res,label = side,closed = side).agg(pd.Series.sum, min_count=1).copy()
+          print('dfnrg',df_nrg)
 		  
           if (('Consumed energy (kWh) A' in df.columns) and ('Consumed energy (kWh) B' in df.columns) and ('Consumed energy (kWh) C' in df.columns)):
             df_nrg = df_nrg[['Consumed energy (kWh) A','Consumed energy (kWh) B','Consumed energy (kWh) C','Total Consumed energy (kWh)']]
@@ -225,6 +237,9 @@ def read_data(devid, acc_token, address, start_time, end_time, interval, descrip
     mapping['cnrgA'] =  'Consumed energy (kWh) A'
     mapping['cnrgB'] =  'Consumed energy (kWh) B'
     mapping['cnrgC'] =  'Consumed energy (kWh) C'
+    mapping['pnrgA'] =  'Produced energy (kWh) A'
+    mapping['pnrgB'] =  'Produced energy (kWh) B'
+    mapping['pnrgC'] =  'Produced energy (kWh) C'
     mapping['cnrgAest'] =  'Estimated consumed energy (kWh) A'
     mapping['cnrgBest'] =  'Estimated consumed energy (kWh) B'
     mapping['cnrgCest'] =  'Estimated consumed energy (kWh) C'
@@ -255,80 +270,116 @@ def read_data(devid, acc_token, address, start_time, end_time, interval, descrip
     mapping['clhmd'] = 'Humidity \%'
     mapping['hmd'] = 'Humidity \%'
     mapping['bindc'] = 'Motion'
+    mapping['ppb'] = 'VOC'
+    mapping['batvlt'] = 'Battery voltage'
        
     # watt_div is dictionary with descriptors to be divided by 1000
     watt_div = ['Average active power A (kW)','Average active power B (kW)','Average active power C (kW)','Total active power (kW)','Reactive Power A (kVAR)','Reactive Power B (kVAR)','Reactive Power C (kVAR)','Average estimated active power A (kW)','Average estimated active power B (kW)','Average estimated active power C (kW)','Consumed energy (kWh) A','Consumed energy (kWh) B','Consumed energy (kWh) C','Total Consumed energy (kWh)','Estimated consumed energy (kWh) A','Estimated consumed energy (kWh) B','Estimated consumed energy (kWh) C','Total Estimated Consumed energy (kWh)','Maximum active power A (kW)','Maximum active power B (kW)','Maximum active power C (kW)']
     
-    r2 = requests.get(url=address + "/api/plugins/telemetry/DEVICE/" + devid + "/values/timeseries?keys="+descriptors+"&startTs=" + start_time + "&endTs=" + end_time + "&agg=NONE&limit=1000000",
-        headers={'Content-Type': 'application/json', 'Accept': '*/*', 'X-Authorization': acc_token}).json()
-    print("keys length ",len(r2.keys()))
-    if ((len(r2.keys())>0) & (len(descriptors)>0)):
-        df = pd.DataFrame([])
-        
-
-        # read all descriptors at once
-        for desc in r2.keys():
-            df1 = pd.DataFrame(r2[desc])
-            df1.set_index('ts', inplace=True)
-            df1.columns = [mapping.get(str(desc))]
-            df = pd.concat([df,df1], axis = 1)
-                   
-
-        if df.empty == False:
-        
-            df.reset_index(drop=False, inplace=True)
-            df['ts'] = pd.to_datetime(df['ts'], unit='ms')
-            # df['ts'] = df['ts'].dt.tz_localize('utc').dt.tz_convert(tmzn).dt.tz_localize(None)
+    df = pd.DataFrame([])
     
-            # Set timestamp as index, convert all columns to float
-            df = df.sort_values(by=['ts'])
-            #df['ts'] = df['ts'].dt.tz_localize('utc').dt.tz_convert(tmzn)
-            df.reset_index(drop=True, inplace=True)
-            df.set_index('ts',inplace = True, drop = True)
-            for col in df.columns:
-                df[col] = df[col].astype('float')
-                
-            
-            
-            [df,Amin,Bmin,Cmin,side] = align_resample(df, interval,tmzn)
-            # df = conv_to_consumption(df, interval,Amin,Bmin,Cmin)
-            
-            
-            for col in watt_div:
-                if col in df.columns:
-                    df[col] = df[col]/1000 #divide by 1000 to convert W/Wh to kW/kWh
-              
-            
-        
-            # create additional columns with total value of three phases
-            if (('Average active power A (kW)' in df.columns) and ('Average active power C (kW)' in df.columns) and ('Average active power B (kW)' in df.columns)):
-                df['Total Average active power (kW)'] = df['Average active power A (kW)'] + df['Average active power B (kW)'] + df['Average active power C (kW)']
-                
-            if (('Average estimated active power A (kW)' in df.columns) and ('Average estimated active power C (kW)' in df.columns) and ('Average estimated active power B (kW)' in df.columns)):
-                df['Total Average estimated active power (kW)'] = df['Average estimated active power A (kW)'] + df['Average estimated active power B (kW)'] + df['Average estimated active power C (kW)']
-                
-            if (('Reactive Power A (kVAR)' in df.columns) and ('Reactive Power C (kVAR)' in df.columns) and ('Reactive Power B (kVAR)' in df.columns)):
-                df['Total Reactive Power (kVAR)'] = df['Reactive Power A (kVAR)'] + df['Reactive Power B (kVAR)'] + df['Reactive Power C (kVAR)']
-                
-            if (('Maximum active power A (kW)' in df.columns) and ('Maximum active power B (kW)' in df.columns) and ('Maximum active power C (kW)' in df.columns)):
-                df['Total Maximum active power (kW)'] = df['Maximum active power A (kW)'] + df['Maximum active power B (kW)'] + df['Maximum active power C (kW)']
-    
-            # convert to given timezone and split Date and Time columns
-            #df['ts'] = df['ts'].dt.tz_localize('utc').dt.tz_convert(tmzn)
-            
-            df['Date'] = [d.date() for d in df['ts']]
-            df['Time '+tmzn] = [d.time() for d in df['ts']]
-            df = df.drop('ts',axis = 1)
-            
-            # change order of columns
-            cols = df.columns.tolist()
-            cols = cols[-2:]+cols[:-2]
-            df = df[cols]
-            df = df.iloc[1:]
-            
+    if descriptors:
+        if int(end_time)-int(start_time)>(5*86400000):
+            print('More than 5 days requested')
+            offset = 5*86400000
         else:
-            df = pd.DataFrame([])
-            side = ' '
+            offset = 86400000
+        svec = np.arange(int(start_time), int(end_time), offset) # 1 day
+        for st in svec:
+            en = st + offset - 1
+        
+            if int(end_time) - en <= 0: en = int(end_time)
+            tmp = pd.DataFrame([])
+        
+            r2 = requests.get(url=address + "/api/plugins/telemetry/DEVICE/" + devid + "/values/timeseries?keys="+descriptors+"&startTs=" + start_time + "&endTs=" + end_time + "&agg=NONE&limit=1000000",
+                headers={'Content-Type': 'application/json', 'Accept': '*/*', 'X-Authorization': acc_token}).json()
+            print("keys length ",len(r2.keys()))
+            if ((len(r2.keys())>0) & (len(descriptors)>0)):
+                
+                
+        
+                # read all descriptors at once
+                for desc in r2.keys():
+                    try:
+                        df1 = pd.DataFrame(r2[desc])
+                        df1.set_index('ts', inplace=True)
+                        df1.columns = [mapping.get(str(desc))]
+                        tmp = pd.concat([tmp,df1], axis = 1)
+                    except:
+                        continue
+                           
+        
+                if not tmp.empty:
+                
+                    tmp.reset_index(drop=False, inplace=True)
+                    tmp['ts'] = pd.to_datetime(tmp['ts'], unit='ms')
+                    # df['ts'] = df['ts'].dt.tz_localize('utc').dt.tz_convert(tmzn).dt.tz_localize(None)
+            
+                    # Set timestamp as index, convert all columns to float
+                    tmp = tmp.sort_values(by=['ts'])
+                    #df['ts'] = df['ts'].dt.tz_localize('utc').dt.tz_convert(tmzn)
+                    tmp.reset_index(drop=True, inplace=True)
+                    tmp.set_index('ts',inplace = True, drop = True)
+                    df = pd.concat([df, tmp])
+                      
+                      
+    if not df.empty:
+        for col in df.columns:
+            df[col] = df[col].astype('float')
+                
+            
+            
+        [df,Amin,Bmin,Cmin,side] = align_resample(df, interval,tmzn)
+        # df = conv_to_consumption(df, interval,Amin,Bmin,Cmin)
+        
+        
+        for col in watt_div:
+            if col in df.columns:
+                df[col] = df[col]/1000 #divide by 1000 to convert W/Wh to kW/kWh
+          
+        
+    
+        # create additional columns with total value of three phases
+        if (('Average active power A (kW)' in df.columns) and ('Average active power C (kW)' in df.columns) and ('Average active power B (kW)' in df.columns)):
+            df['Total Average active power (kW)'] = df['Average active power A (kW)'] + df['Average active power B (kW)'] + df['Average active power C (kW)']
+            
+        if (('Average estimated active power A (kW)' in df.columns) and ('Average estimated active power C (kW)' in df.columns) and ('Average estimated active power B (kW)' in df.columns)):
+            df['Total Average estimated active power (kW)'] = df['Average estimated active power A (kW)'] + df['Average estimated active power B (kW)'] + df['Average estimated active power C (kW)']
+            
+        if (('Reactive Power A (kVAR)' in df.columns) and ('Reactive Power C (kVAR)' in df.columns) and ('Reactive Power B (kVAR)' in df.columns)):
+            df['Total Reactive Power (kVAR)'] = df['Reactive Power A (kVAR)'] + df['Reactive Power B (kVAR)'] + df['Reactive Power C (kVAR)']
+            
+        if (('Maximum active power A (kW)' in df.columns) and ('Maximum active power B (kW)' in df.columns) and ('Maximum active power C (kW)' in df.columns)):
+            df['Total Maximum active power (kW)'] = df['Maximum active power A (kW)'] + df['Maximum active power B (kW)'] + df['Maximum active power C (kW)']
+
+        # convert to given timezone and split Date and Time columns
+        #df['ts'] = df['ts'].dt.tz_localize('utc').dt.tz_convert(tmzn)
+        
+        # Round to 3 digits
+        for col in df.columns:
+            if col!='ts':
+                df[col] = df[col].round(3)
+        
+        df['Date'] = [d.date() for d in df['ts']]
+        df['Time '+tmzn] = [d.time() for d in df['ts']]
+        df = df.drop('ts',axis = 1)
+        
+        
+        
+        # change order of columns
+        cols = df.columns.tolist()
+        cols = cols[-2:]+cols[:-2]
+        df = df[cols]
+        df = df.iloc[1:]
+        
+        if int(interval) == 1:
+            while df.index[0].hour == 23:
+                df = df.iloc[1:]
+        if int(interval) < 1440:
+            if df.index[-1].day != df.index[-2].day:
+                df = df.iloc[:-1]
+            
+        
     else:
         df = pd.DataFrame([])
         side = ' '
@@ -363,6 +414,7 @@ def get_harmonics(start_time, end_time, devid, acc_token, interval, address,tmzn
             dfH.set_index('ts',inplace = True,drop=True)
             for col in dfH.columns:
                 dfH[col] = dfH[col].astype('float')
+                dfH.rename(columns={col:col+' %'},inplace=True)
         
         dfH['ts'] = dfH.index
         dfH['Date'] = [d.date() for d in dfH['ts']]
@@ -373,7 +425,7 @@ def get_harmonics(start_time, end_time, devid, acc_token, interval, address,tmzn
         cols = dfH.columns.tolist()
         cols = cols[-2:]+cols[:-2]
         dfH = dfH[cols]
-        dfH = dfH.iloc[1:]
+        #dfH = dfH.iloc[1:]
         
         print(dfH)
     return dfH
@@ -387,7 +439,7 @@ def fetch_tmp(start_time, end_time, assetid, acc_token, interval, address,tmzn):
     mapping['clhmd'] = 'Humidity \%'
 
     r3 = requests.get(
-        url= address + "/api/plugins/telemetry/ASSET/"+ assetid +"/values/timeseries?keys=tmp,clhmd&startTs=" + start_time + "&endTs=" + end_time + "&agg=NONE&limit=300000",
+        url= address + "/api/plugins/telemetry/ASSET/"+ assetid +"/values/timeseries?keys=tmp,clhmd&startTs=" + start_time + "&endTs=" + end_time + "&agg=NONE&limit=1000000",
         headers={'Content-Type': 'application/json', 'Accept': '*/*', 'X-Authorization': acc_token}).json()
     
     dfT = pd.DataFrame([])
@@ -468,20 +520,32 @@ def main(argv):
     
     
     startt = time.time()
+    print(len(argv))
+    if len(argv)==9:
+        # input arguments
+        entityName = str(argv[1])
+        entityID = str(argv[2])
+        reportID = str(argv[3])
+        start_time = str(argv[4])
+        end_time = str(argv[5]) 
+        interval = str(argv[6])
+        descriptors = str(argv[7])
+        tmzn = str(argv[8])
+    elif len(argv)==8:
+        # input arguments
+        entityName = "Smart_meter"
+        entityID = str(argv[1])
+        reportID = str(argv[2])
+        start_time = str(argv[3])
+        end_time = str(argv[4]) 
+        interval = str(argv[5])
+        descriptors = str(argv[6])
+        tmzn = str(argv[7])
     
-    # input arguments
-    entityName = str(argv[1])
-    entityID = str(argv[2])
-    reportID = str(argv[3])
-    start_time = str(argv[4])
-    end_time = str(argv[5]) 
-    interval = str(argv[6])
-    descriptors = str(argv[7])
-    tmzn = str(argv[8])
     
-    path = '../xlsx files'
+    path = '/home/iotsm/HttpServer_Andreas/xlsx files/'
         
-    path = path+'/'
+    
     os.chdir(path)
     filename = entityName+'_'+start_time+'_'+end_time+'.xlsx'
    
@@ -489,13 +553,16 @@ def main(argv):
     address = "http://localhost:8080"
 
     
-    r = requests.post(address + "/api/auth/login",json={'username': 'meazon@thingsboard.org', 'password': 'meazon'}).json()
+    r = requests.post(address + "/api/auth/login",json={'username': 'a.andrikopoulos19@meazon.com', 'password': 'andrikopMeazon13'}).json()
 
     start_time = str(int(start_time)- (5*60000))
     
     # acc_token is the token to be used in the next request
     acc_token = 'Bearer' + ' ' + r['token']
-
+    
+    dfH52=pd.DataFrame([])
+    dfH53=pd.DataFrame([])
+    dfH605=pd.DataFrame([])
     if reportID == 'b':
         r1 = requests.get(url=address + '/api/relations/info?fromId=' + entityID + '&fromType=ASSET',
                           headers={'Content-Type': 'application/json', 'Accept': '*/*',
@@ -610,12 +677,19 @@ def main(argv):
                 dfH52.to_excel(writer,sheet_name = 'Harmonics_102.402.000052', index = False, engine = 'xlsxwriter')
             if not dfH53.empty:
                 dfH53.to_excel(writer,sheet_name = 'Harmonics_102.402.000053', index = False, engine = 'xlsxwriter')
+            
         writer.save()
         writer.close()
     else:
         # read ID and name of building's devices
         devid = str(entityID)
         devName = str(entityName)
+        
+        # if Ditiki Makedonia get harmonics
+        
+        if devid == 'b5977640-0bf8-11ec-ab8f-ef1ea7f487fc':
+            dfH605 = get_harmonics(start_time, end_time, devid, acc_token, interval, address,tmzn)
+                        
   
         print('devid:', devid)
         sum_nrg = pd.DataFrame([])
@@ -652,7 +726,12 @@ def main(argv):
                 if summary.empty==False:
                     devName = devName.replace(':','')
                     summary.to_excel(writer, sheet_name=devName, index=False)
-        
+                else:
+                    summary = pd.DataFrame({'There are no measurements for the selected period':[]})
+                    devName = devName.replace(':','')
+                
+                if not dfH605.empty:
+                    dfH605.to_excel(writer,sheet_name = 'Harmonics_102.402.000605', index = False, engine = 'xlsxwriter')
             writer.save()
             writer.close()
     
