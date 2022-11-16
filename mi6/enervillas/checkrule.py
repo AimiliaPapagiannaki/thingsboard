@@ -10,7 +10,7 @@ import pytz
 from astral import LocationInfo
 from astral.sun import sun
 
-def get_dev_info(devname):
+def get_dev_info(device):
     address = "http://localhost:8080"
     r = requests.post(address + "/api/auth/login",
                       json={'username': 'meazonpro@meazon.com', 'password': 'meazonpro1'}).json()
@@ -19,7 +19,7 @@ def get_dev_info(devname):
     acc_token = 'Bearer' + ' ' + r['token']
     # get devid by serial name
     r1 = requests.get(
-        url=address + "/api/tenant/devices?deviceName=" + devname,
+        url=address + "/api/tenant/devices?deviceName=" + device,
         headers={'Content-Type': 'application/json', 'Accept': '*/*', 'X-Authorization': acc_token}).json()
 
     devid = r1['id']['id']
@@ -118,14 +118,38 @@ def pool_time(devid, address, acc_token, start_time, end_time, pool_id):
     if pool_id==1:
         df.loc[df['pwrB']<100, 'dif']=0
     elif pool_id==2:
-        df.loc[df['pwrC']<100, 'dif']=0
+        df.loc[df['pwrB']<100, 'dif']=0
     
     duration = df['dif'].sum() # operating time in seconds
     
     return duration
     
     
-def check_states(evserial, pool1, pool2, address, acc_token, start_time, end_time):
+    
+def drill_time(devid, address, acc_token, start_time, end_time):
+    descriptors = 'pwrA'
+    
+    start_time = datetime.datetime.utcnow()
+    start_time = start_time - datetime.timedelta(hours=start_time.hour, minutes=start_time.minute, seconds=start_time.second,
+                                                 microseconds=start_time.microsecond)
+    tz = pytz.timezone('Europe/Athens')
+    start_time = tz.localize(start_time)
+    start_time = str(int(start_time.timestamp()*1000))
+    
+    
+    df = read_data(devid, address, acc_token, start_time, end_time, descriptors, '1000000')
+    df['dif'] = df.index.to_series().diff().astype('timedelta64[s]')
+    
+    
+    df.loc[df['pwrA']<100, 'dif']=0
+    
+    duration = df['dif'].sum() # operating time in seconds
+    
+    return duration
+    
+    
+    
+def check_states(devid, pool1, pool2, drilling, address, acc_token, start_time, end_time):
 
     # check if EV is operating
     [devid,_,_,_] = get_dev_info(evserial)
@@ -159,7 +183,18 @@ def check_states(evserial, pool1, pool2, address, acc_token, start_time, end_tim
     else:
         pool_op2 = 0
     
-    return ev_op, pool_op1, pool_op2
+    
+    # check if drilling is operating
+    [devid,_,_,_] = get_dev_info(drilling)
+    descriptors = 'pwrA'
+    df = read_data(devid, address, acc_token, start_time, end_time, descriptors,'1')
+    pwrsum = df['pwrA'].iloc[0]
+    if pwrsum>100:
+        drill_op = 1
+    else:
+        drill_op = 0
+    
+    return ev_op, pool_op1, pool_op2, drill_op
         
         
 def EV_checks(curr_state, EVthres):
@@ -259,8 +294,46 @@ def pool2_checks(curr_state, pool2thres, pool2_duration_threshold, pool_min_thre
     
     return pool2_mz_cmd, change, curr_state
     
+    
+def drill_checks(curr_state, drillthres, drill_duration_threshold, deltasunset, deltasunrise): 
         
-
+    change = 0
+    drill_mz_cmd = 0
+    
+    # IF DAYLIGHT
+    if (deltasunset>=(3*3600) and deltasunrise>=0):
+        # if drilling is off and duration hasnt been reached, check power to turn it on
+        if (curr_state['drill_op']==0 and curr_state['drill_dur']<drill_duration_threshold):
+            if curr_state['pwrsum']<=drillthres:
+                drill_mz_cmd = 1
+                change = 1
+                curr_state['pwrsum'] = curr_state['pwrsum']-drillthres
+                
+        # CHECK OFFS
+        
+        if ((curr_state['drill_op'] == 1) and (curr_state['drill_dur']>drill_duration_threshold)):
+            print('drill should turn off, drill duration has been reached')
+            drill_mz_cmd = 0
+            change = 1
+        if (((curr_state['drill_op'] == 1) or (curr_state['drill_eco']==1)) and curr_state['pwrsum']>1000 ):
+            print('drill should turn off, too much consumption in residence')
+            drill_mz_cmd = 0
+            change = 1
+            
+    # IF NIGHTFALL
+    else:
+        if (curr_state['drill_dur']<drill_duration_threshold and curr_state['drill_op']==0):
+            print('drilling should turn on due to duration constraint')
+            drill_mz_cmd = 1
+            change = 1
+            
+        elif (curr_state['drill_dur']>=drill_duration_threshold and curr_state['drill_op']==1):
+            print('drill should turn off due to duration constraint')
+            drill_mz_cmd = 0
+            change = 1
+        
+    
+    return drill_mz_cmd, change, curr_state
     
     
 if __name__ == '__main__':
@@ -270,6 +343,7 @@ if __name__ == '__main__':
     pvname = '102.402.000110' # PV
     pool1 = '102.402.000927' # pool Nefeli
     pool2 = '102.402.000109' # pool Anna
+    drilling = '101.111.000136' # drilling plug Nefeli
     
     end_time = str(int(datetime.datetime.utcnow().timestamp()*1e3)) # current datetime
     start_time = str(int(datetime.datetime.utcnow().timestamp()*1e3)-86400000) # previous day datetime, but fetch only last 5 values aka 5minutes
@@ -279,20 +353,27 @@ if __name__ == '__main__':
     [pool1_id, pool1_token, _, _] =  get_dev_info(pool1)
     [pool2_id, pool2_token, _, _] =  get_dev_info(pool2)
     [devid, devtoken, _, _] =  get_dev_info(devname)
+    [drillid, drilltoken, _, _] =  get_dev_info(drilling)
     
     
     local_tz = pytz.timezone('Europe/Athens')
     EVthres = -3000 # threshold to charge, 3000+2000 
     pool1thres = -600 # threshold to operate pool2, equal to half the operating power
     pool2thres = -350 # threshold to operate pool2, equal to half the operating power
+    drillthres = -250 #threshold to operate dilling, equal to half the operating power
     #pool_duration_threshold = 29000 # approx. 8 hours of operation
     pool_min_thres = 3600 # minimum operation time for pool to complete a cycle -> 1.5 hour
     
+    
+    # read operationTime attribute from user interface
     [pool1_duration_threshold, _] = read_attr(pool1_id, address, acc_token, start_time, end_time, 'operationTime')
     [pool2_duration_threshold, _] = read_attr(pool2_id, address, acc_token, start_time, end_time, 'operationTime')
     pool1_duration_threshold = pool1_duration_threshold*3600
     pool2_duration_threshold = pool2_duration_threshold*3600
     #print('pool1 & pool2 duration:',pool1_duration_threshold,pool2_duration_threshold)
+    
+    # drilling operation threshold aka necessary time
+    drill_duration_threshold = 6*3600
     
     # get sunset time
     city = LocationInfo('Patras', 'Greece', 'Europe/Athens',38.24671738448589, 21.733760692975086)
@@ -308,7 +389,7 @@ if __name__ == '__main__':
     
     
     
-    print('***************************')
+    #print('***************************')
     print('Running script at UTC time:',datetime.datetime.utcnow())
     #print('Sunset/sunrise:',sunset,sunrise)
     # initialize dictionary with current state of residence
@@ -354,7 +435,7 @@ if __name__ == '__main__':
     #print('Current returning power:', curr_state['pwrsum'])
     
     # read operating state of ev and pools
-    [curr_state['ev_op'], curr_state['pool_op1'], curr_state['pool_op2']] = check_states(evserial, pool1, pool2, address, acc_token, start_time, end_time)
+    [curr_state['ev_op'], curr_state['pool_op1'], curr_state['pool_op2'], curr_state['drill_op']] = check_states(evserial, pool1, pool2, drilling,address, acc_token, start_time, end_time)
     #print('Operation status of EV, pool1, pool2:',curr_state['ev_op'], curr_state['pool_op1'], curr_state['pool_op2'])
     
     # calculate operating time of pools
@@ -362,13 +443,18 @@ if __name__ == '__main__':
     curr_state['pool2_dur'] = pool_time(pool2_id, address, acc_token, start_time, end_time, 2)
     #print('duration of pools 1 & 2:',curr_state['pool1_dur'],curr_state['pool2_dur'])
     
-    # check eco-operate of EV, pool1, pool2
+    
+    # calculate operating time of drilling
+    curr_state['drill_dur'] = drill_time(drillid, address, acc_token, start_time, end_time)
+    
+    
+    # check eco-operate of EV, pool1, pool2, drilling
     try:
         df = read_data(evid, address, acc_token, '0', end_time, 'eco_operate','1')
         curr_state['EV_eco'] = df['eco_operate'].iloc[0]
     except:
         curr_state['EV_eco'] = 0
-        print('Variable has no value for EV')
+        #print('Variable has no value for EV')
     
     dtnow = datetime.datetime.utcnow().replace(tzinfo=pytz.UTC).astimezone(local_tz)
     df = read_data(pool1_id, address, acc_token, '0', end_time, 'eco_operate','1')
@@ -379,6 +465,14 @@ if __name__ == '__main__':
     df = read_data(pool2_id, address, acc_token, '0', end_time, 'eco_operate','1')
     curr_state['pool2_eco'] = df['eco_operate'].iloc[0]
     curr_state['pool2_eco_time'] = (dtnow-df.index[0]).total_seconds()
+    
+    try:
+        df = read_data(drillid, address, acc_token, '0', end_time, 'eco_operate','1')
+        curr_state['drill_eco'] = df['eco_operate'].iloc[0]
+    except:
+        curr_state['drill_eco'] = 0
+    
+    
     
     # read command-by-user attribute to check if user has taken control of pools
     descriptors = 'command_by_user'
@@ -393,7 +487,7 @@ if __name__ == '__main__':
     if EV_change==1:
         mydict = {int(end_time) : {'eco_operate':str(EV_mz_cmd)}}
         print('EV',mydict)
-        send_data(mydict,ev_token,address,acc_token)
+        send_data(mydict,evtoken,address,acc_token)
     
     
     # if user has not activated pools, run pool chceck process
@@ -405,10 +499,16 @@ if __name__ == '__main__':
             send_data(mydict,pool1_token,address,acc_token)
     else:
         delta_op = int(round(time.time() * 1000)) - ts1
-        if delta_op>=pool_min_thres:
-            print('User command, pool1 has reached time limit:',delta_op/1000)
+        delta_op = delta_op/1000
+        
+        if delta_op>=pool1_duration_threshold:
+            print('User command, pool1 has reached time limit:',delta_op)
             mydict = {'command_by_user' : False}
-            #send_att_val(mydict,address, pool1_id, acc_token)
+            send_att_val(mydict,address, pool1_id, acc_token)
+            
+            mydict = {int(end_time) : {'eco_operate':'0'}}
+            print('pool1',mydict)
+            send_data(mydict,pool1_token,address,acc_token)
          
     if not curr_state['pool2_command']:
         [pool2_mz_cmd, pool2_change, curr_state] = pool2_checks(curr_state, pool2thres, pool2_duration_threshold, pool_min_thres, deltasunset, deltasunrise)
@@ -418,12 +518,21 @@ if __name__ == '__main__':
             send_data(mydict,pool2_token,address,acc_token)        
     else:
         delta_op = int(round(time.time() * 1000)) - ts2
-        if delta_op>=pool_min_thres:
-            print('User command, pool2 has reached time limit:',delta_op/1000)
+        delta_op = delta_op/1000
+        if delta_op>=pool2_duration_threshold:
+            print('User command, pool2 has reached time limit:',delta_op)
             mydict = {'command_by_user' : False}
-            #send_att_val(mydict,address, pool2_id, acc_token)
+            send_att_val(mydict,address, pool2_id, acc_token)
+            
+            mydict = {int(end_time) : {'eco_operate':'0'}}
+            print('pool2',mydict)
+            send_data(mydict,pool2_token,address,acc_token) 
     
-    
+    [drill_mz_cmd, drill_change, curr_state] = drill_checks(curr_state, drillthres, drill_duration_threshold, deltasunset, deltasunrise)    
+    if drill_change==1:
+        mydict = {int(end_time) : {'eco_operate':str(drill_mz_cmd)}}
+        print('Drilling',mydict)
+        send_data(mydict,drilltoken,address,acc_token)
     
     #print('mz commands:',EV_mz_cmd, pool1_mz_cmd, pool2_mz_cmd)
     print('********************************************************')
