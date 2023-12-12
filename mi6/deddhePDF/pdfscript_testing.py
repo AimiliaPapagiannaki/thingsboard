@@ -5,7 +5,7 @@ import pandas as pd
 import numpy as np
 import requests
 import os
-import glob
+import staticmap
 import pytz
 import matplotlib.dates as mdates
 import json
@@ -30,16 +30,21 @@ class FPDF(FPDF):
         self.set_font('Arial', 'I', 8)
         # Page number
         self.cell(0, 10, str(self.page_no()), 0, 0, 'C')
+
+        self.image('E:/VSprojects/thingsboard/mi6/deddhePDF/logos/meazon.png', x=250, y=None, w=30, h=10)
     def header(self):
         self.set_y(10)
         # self.image('/home/azureuser/deddhePDF/logos/meazon.png', x=10, y=10, w=30, h=10)
         # self.image('/home/azureuser/deddhePDF/logos/deddie.jpg', x=250, y=10, w=30, h=10)
-        self.image('E:/VSprojects/thingsboard/mi6/deddhePDF/logos/meazon.png', x=10, y=10, w=30, h=10)
+        # self.image('E:/VSprojects/thingsboard/mi6/deddhePDF/logos/meazon.png', x=10, y=10, w=30, h=10)
+        self.add_font('DejaVuΒ', '', r"E:\Python311\Lib\site-packages\fpdf\fonts\DejaVuSans-Bold.ttf", uni=True)
+        self.set_font('DejaVuΒ', '', 8)
+        self.cell(0, 10, 'Διεύθυνση Εκμετάλλευσης Δικτύου', 0, 0)
         self.image('E:/VSprojects/thingsboard/mi6/deddhePDF/logos/deddie.jpg', x=250, y=10, w=30, h=10)
 
 
 
-def create_pdf(filename, month_Name, month_Name2, year, year2,day1,day2,device,frqflag):
+def create_pdf(filename,label, month_Name, month_Name2, year, year2,day1,day2,device,frqflag,nominal,asset):
 
     # try:        
     pdf = FPDF()
@@ -53,11 +58,20 @@ def create_pdf(filename, month_Name, month_Name2, year, year2,day1,day2,device,f
     pdf.add_font('DejaVuB', '', r"E:\Python311\Lib\site-packages\fpdf\fonts\DejaVuSans-Bold.ttf", uni=True)
     pdf.set_font('DejaVuB', '', 14)
     pdf.set_xy(20, 20)
-    # pdf.set_font('arial', 'B', 14)
-    # pdf.cell(0,8, "Moxy Patras", 0, 1, 'C')
-    pdf.cell(0, 10, "Ανάλυση ποιότητας τάσης "+str(day1)+"/"+str(month_Name)+"/"+str(year)+" - "+str(day2)+"/"+ str(month_Name2)+"/"+str(year2), 0, 1, 'C')
+        
+
+    # pdf.cell(0, 10, "Ανάλυση ποιότητας τάσης "+str(day1)+"/"+str(month_Name)+"/"+str(year)+" - "+str(day2)+"/"+ str(month_Name2)+"/"+str(year2), 0, 1, 'C')
+    pdf.cell(0, 10, "Ανάλυση ποιότητας τάσης "+str(month_Name)+"/"+str(year), 0, 1, 'C')
     pdf.set_font('DejaVu', '', 12)
-    pdf.cell(0,10,"Σειριακός αριθμός μετρητή:"+str(device), 0, 1, 'C')
+    pdf.cell(0,10,"Μετασχηματιστής "+label+" ("+str(device)+")", 0, 1, 'C')
+    pdf.cell(0,10,"Περιοχή εγκατάστασης: "+str(asset), 0, 1, 'C')
+    pdf.cell(0,10,"Ονομαστική ισχύς: "+str(nominal)+"kVA", 0, 1, 'C')
+
+    # new page
+    pdf.add_page(orientation='L')
+    pdf.set_font('DejaVuB', '', 14)
+    pdf.set_xy(20, 20) 
+    pdf.cell(0, 10, "Μετρικές ποιότητας τάσης ", 0, 1, 'C')
 
     pdf.image('metrics.png', x=50, y=50, w=210, h=80, type='', link='')
     pdf.set_xy(20, 170)
@@ -167,6 +181,7 @@ def create_pdf(filename, month_Name, month_Name2, year, year2,day1,day2,device,f
     pdf.cell(0, 9, "Γενικές πληροφορίες διαδικασίας ανάλυσης", 0, 1, 'C')
     pdf.set_font('DejaVu', '', 11)
     pdf.multi_cell(0, 9, "• Η συχνότητα αναφοράς δεδομένων (report interval) είναι 1 δείγμα ανά 1 λεπτό ", 0, 1, 'L')
+    pdf.multi_cell(0, 9, "• Οι τιμές ενημερώνονται κάθε 10msec και υπολογίζεται το average αυτών στο αντίστοιχο report interval (εν προκειμένω, 1 λεπτό). Εξαίρεση αποτελεί η δειγματοληψία των αρμονικών που πραγματοποιείται κάθε 3 δευτερόλεπτα (και όχι κάθε 10msec) και στη συνέχεια υπολογίζεται αντίστοιχα το average στο report interval (1 λεπτό)", 0, 1, 'L')
     pdf.multi_cell(0, 9, "• Για την αναγωγή των δεδομένων σε συχνότητα 10λεπτων υπολογίζεται ανά φάση η μέση τιμή των δειγμάτων", 0, 1, 'L')
     pdf.multi_cell(0, 9, "• Η αναγωγή των τιμών επί του συνόλου των φάσεων (τόσο για την τάση όσο και για την παραμόρφωση THD) προκύπτει από το μέσο όρο των 3 τιμών ανά δεκάλεπτο: ", 0, 1, 'L')
     pdf.cell(0, 9, "(total Voltage = (Voltage L1 + Voltage L2 + Voltage L3) / 3", 0, 1, 'C')
@@ -174,6 +189,7 @@ def create_pdf(filename, month_Name, month_Name2, year, year2,day1,day2,device,f
     pdf.set_font('DejaVu', '', 11)
     pdf.multi_cell(0, 9, "• Η συχνότητα υπολογίζεται εντός του μετρητή ως average ανά 1 λεπτό, και όχι ανά 10 δευτερόλεπτα όπως αναγράφεται στο πρότυπο 50160.", 0, 1, 'L')
     pdf.multi_cell(0, 9, "• Η ποιοτική ανάλυση τάσης στο σύνολό της ακολουθεί κατά βάση τους κανόνες/όρια/πίνακες του προτύπου 50160.", 0, 1, 'L')
+
 
     os.chdir('E:/VSprojects/thingsboard/mi6/deddhePDF/pdf_files')
     pdf.output(filename + ".pdf", 'F')
@@ -197,14 +213,17 @@ def get_dev_info(device, address):
         url=address + "/api/tenant/devices?deviceName=" + device,
         headers={'Content-Type': 'application/json', 'Accept': '*/*', 'X-Authorization': acc_token}).json()
     
-    
+    label = r1['label']
     devid = r1['id']['id']
     r1 = requests.get(
         url=address + "/api/device/" + devid + "/credentials",
         headers={'Content-Type': 'application/json', 'Accept': '*/*', 'X-Authorization': acc_token}).json()
     devtoken = r1['credentialsId']
 
-    return devid,devtoken,acc_token
+    r1 = requests.get(url=address + "/api/plugins/telemetry/DEVICE/"+devid+"/values/attributes",headers={'Content-Type': 'application/json', 'Accept': '*/*', 'X-Authorization': acc_token}).json()
+    lat = r1[14]['value']
+    lon = r1[15]['value']
+    return devid,devtoken,acc_token,label,lat,lon
 
 def dfplots(df,var,color,ylabel):
     local_tz = pytz.timezone('Europe/Athens')
@@ -271,6 +290,13 @@ def metricsfig(df):
     t.auto_set_font_size(False) 
     t.auto_set_column_width(col=list(range(len(df.columns))))
     
+    color_dict = {"Pass": "green", "Fail": "red"}
+    for i, row in enumerate(df.values):
+        cell_text = row[-1]
+        color = color_dict.get(cell_text, "black")  # Default to black if not "Pass" or "Fail"
+        t[(i+1, 3)].get_text().set_text(cell_text)
+        t[(i+1, 3)].get_text().set_color(color)
+
     table_cells = t.get_children()
     for cell in table_cells: cell.set_height(0.07)
     plt.gca().spines[['right', 'top']].set_visible(False)
@@ -385,11 +411,14 @@ def main(argv):
     # end_time = str(int(end_day.timestamp()*1e3))
     start_time = argv[2]
     end_time = argv[3]
+
+    asset = argv[4]
+    nominal = 160
     
     #start_time = input['start_time']
     #end_time = input['end_time']
     
-    [devid, _, acc_token] = get_dev_info(device, address)
+    [devid, _, acc_token,label,lat,lon] = get_dev_info(device, address)
 
     timethres = 12*3600000
     svec = np.arange(int(start_time),int(end_time),timethres)
@@ -535,7 +564,7 @@ def main(argv):
     alarmspdf(swellsB,'L2','S')
     alarmspdf(swellsC,'L3','S')
     filename = str(day1)+'_'+str(month_Name)+'_'+str(year)+'_'+str(day2)+'_'+str(month_Name2)+'_'+str(year2)+'_'+str(device)
-    create_pdf(filename, month_Name, month_Name2, year, year2, day1,day2,device,frqflag)
+    create_pdf(filename,label, month_Name, month_Name2, year, year2, day1,day2,device,frqflag,nominal,asset)
     
 
 
