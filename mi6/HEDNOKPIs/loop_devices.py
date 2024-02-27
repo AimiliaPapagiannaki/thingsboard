@@ -13,6 +13,8 @@ def main():
     
     start_time = '1705788000000'
     end_time = '1708466400000'
+    #start_time = '1701381600000' # Dec 1st
+    #end_time = '1708466400000' # Feb 21st
     
     address = 'http://localhost:8080'
     r = requests.post(address + "/api/auth/login",
@@ -25,7 +27,7 @@ def main():
     r1 = requests.get(url=address + "/api/entityGroup/"+entityId+"/entities?pageSize=1000&page=0",headers={'Content-Type': 'application/json', 
 'Accept': '*/*', 'X-Authorization': acc_token}).json()
     
-    summary = pd.DataFrame(columns=['Installation','Transformer','Distribution','Nr. of power alarms L1','% of time of power alarms L1','Nr. of power alarms L2','% of time of power alarms L2','Nr. of power alarms L3','% of time of power alarms L3','Nr. of overcurrent alarms L1','% of time of overcurrent alarms L1','Nr. of overcurrent alarms L2','% of time of overcurrent alarms L2','Nr. of overcurrent alarms L3','% of time of overcurrent alarms L3','Nr. of Power Fails (outage)','Nr. of Voltage dips','Avg time of Voltage dips (msec)','Nr. of Voltage swells','Avg time of Voltage swells (msec)'])
+    summary = pd.DataFrame(columns=['Installation','Transformer','Distribution','Total energy consumption (MWh)','Nr. of power alarms L1','Min duration of power alarms L1 (min)','Max duration of power alarms L1 (min)','Nr. of power alarms L2','Min duration of power alarms L2 (min)','Max duration of power alarms L2 (min)','Nr. of power alarms L3','Min duration of power alarms L3 (min)','Max duration of power alarms L3 (min)','Nr. of overcurrent alarms L1','Min duration of overcurrent alarms L1 (min)','Max duration of overcurrent alarms L1 (min)','Nr. of overcurrent alarms L2','Min duration of overcurrent alarms L2 (min)','Max duration of overcurrent alarms L2 (min)','Nr. of overcurrent alarms L3','Min duration of overcurrent alarms L3 (min)','Max duration of overcurrent alarms L3 (min)','Nr. of Voltage unbalance alarms','% of time of Voltage unbalance alarms','Nr. of Current unbalance alarms','% of time of Current unbalance alarms','Nr. of Power Fails (outage)','Min time of Power Fails (sec)','Max time of Power Fails (sec)','Nr. of Voltage dips','Avg time of Voltage dips (msec)','Nr. of Voltage swells','Avg time of Voltage swells (msec)'])
     
     
   
@@ -37,6 +39,7 @@ def main():
         print(assetname)
     
         if assetname[0]!='0':
+        #if assetname=='ΜΠ-172 Κ/Δ ΠΑΛΛΗΝΗΣ':
         
             r2 = requests.get(url=address + "/api/relations/info?fromId="+assetid+"&fromType=ASSET",headers={'Content-Type': 'application/json', 'Accept': '*/*', 'X-Authorization': acc_token}).json()
             
@@ -44,7 +47,7 @@ def main():
             for j in range(0, len(r2)):
                 device = r2[j]['toName']
                 if device[:3]=='102':
-                    
+                    print(device)
                     isdist = False
                     kpis = {}
                     kpis['Installation'] = assetname
@@ -80,6 +83,7 @@ def main():
                       isdist = True
                       
                       device = r3[k]['toName']
+                      print(device)
                       kpis['Transformer'] = label
                       kpis['Distribution'] = device
                       
@@ -98,8 +102,8 @@ def main():
                           #pass
                 
         
-        summary.to_excel('HEDNO_KPIs.xlsx', index=False)
-        
+    summary.to_excel('HEDNO_KPIs_v3.xlsx', index=False)
+    #summary.to_excel('testPwrAlarms.xlsx', index=False)        
             
             
 
