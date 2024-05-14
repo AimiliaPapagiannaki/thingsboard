@@ -82,8 +82,13 @@ def read_data(devid, acc_token, address, start_time, end_time,descriptors):
         df = align_resample(df, '1h')
     return df
 
-
-
+def get_devid(address,acc_token, device):
+    r1 = requests.get( url=address + "/api/tenant/devices?deviceName=" + device,
+                    headers={'Content-Type': 'application/json', 'Accept': '*/*', 'X-Authorization': acc_token}).json()
+    devid = r1['id']['id']
+    
+    return devid
+    
 
 def create_virtual(start_time, end_time,descriptors,vrtl,operation,layer, acc_token):
     address = "http://localhost:8080"
@@ -93,10 +98,7 @@ def create_virtual(start_time, end_time,descriptors,vrtl,operation,layer, acc_to
             if layer==1:
                 print(virtual)
                 # request devid
-                r1 = requests.get(
-                    url=address + "/api/tenant/devices?deviceName=" + virtual,
-                    headers={'Content-Type': 'application/json', 'Accept': '*/*', 'X-Authorization': acc_token}).json()
-                devid = r1['id']['id']
+                devid = get_devid(address,acc_token, virtual)
             else:
                 devid = virtual
     
@@ -275,12 +277,23 @@ def main():
     ################################################################
     
     # Athroisma grafeiwn (den grafetai)
-    #athr_grafeiwn = ['e8652270-19e5-11ec-ab8f-ef1ea7f487fc','0445f9b0-19e6-11ec-ab8f-ef1ea7f487fc','0c1aacd0-19e6-11ec-ab8f-ef1ea7f487fc','1415aca0-19e6-11ec-ab8f-ef1ea7f487fc','813f3ce0-1c2e-11ea-8762-6bf954fc5af1']
+    athr_grafeiwn = ['102.301.000870',# Fwtismos pinaka
+                     '102.301.000963',# Mparokivotia fwtismos
+                     '102.301.000850',# Fwtismos isogeio
+                     '102.301.000869',# Fwtismos 5ou
+                     '102.301.000868',# Fwtismos 3ou
+                     '102.301.000865',# Fwtismos 1ou
+                     '102.301.000970',# Fortia kinisis grafeiwn 3os
+                     '102.301.000867',# Fortia kinisis 1os
+                     '102.301.000969',#Klimatismos 5ou
+                     '102.301.000976',#Klimatismos 3ou
+                     '102.301.000968',#Klimatismos 1ou
+                     '102.402.000037', #UPS 2
+                     '102.402.000028'] # UPS 1
     
-    athr_grafeiwn =['924afcd0-1c2f-11ea-8762-6bf954fc5af1','e0cc30d0-96b4-11eb-9140-dd89ba669722','abba5450-1c2e-11ea-8762-6bf954fc5af1','945ffa20-1c2f-11ea-8762-6bf954fc5af1','a94a8cd0-1c2e-11ea-8762-6bf954fc5af1','817ae652-1c2e-11ea-8762-6bf954fc5af1','8ef1e6c0-1c2f-11ea-8762-6bf954fc5af1','813f3ce0-1c2e-11ea-8762-6bf954fc5af1','648b68c0-1c2f-11ea-8762-6bf954fc5af1','855d9ec0-1c2e-11ea-8762-6bf954fc5af1','828ca470-1c2e-11ea-8762-6bf954fc5af1','40be03b0-20dc-11ea-8762-6bf954fc5af1','b956d620-9428-11ea-8c14-6192a0efe6e6']
     operation=1
     
-    agg1 = create_virtual(start_time, end_time,descriptors,athr_grafeiwn,operation,2,acc_token)
+    agg1 = create_virtual(start_time, end_time,descriptors,athr_grafeiwn,operation,1,acc_token)
     #print("athr graf",agg1)
     if not agg1.empty:
         agg1 = agg1.dropna()
@@ -290,7 +303,9 @@ def main():
     
     
     # Synolo kinitis statheris  (den grafetai) #,9997b670-942c-11ea-8c14-6192a0efe6e6,,"""'69dd5c50-19e6-11ec-ab8f-ef1ea7f487fc','7df3e0b0-19e6-11ec-ab8f-ef1ea7f487fc'
-    synolo_kinstath = ['63a6b040-5947-11ea-8762-6bf954fc5af1','992a9cc0-942c-11ea-8c14-6192a0efe6e6','9997b670-942c-11ea-8c14-6192a0efe6e6']
+    synolo_kinstath = ['63a6b040-5947-11ea-8762-6bf954fc5af1',
+                       '992a9cc0-942c-11ea-8c14-6192a0efe6e6',
+                       '9997b670-942c-11ea-8c14-6192a0efe6e6']
     agg2 = create_virtual(start_time, end_time,descriptors,synolo_kinstath,operation,2,acc_token)
     #print("synolo kin stath",agg2)
     if not agg2.empty:
