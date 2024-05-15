@@ -129,36 +129,51 @@ def create_virtual(start_time, end_time,descriptors,vrtl,operation,layer, acc_to
     return agg
 
 
+def postproc(df, label):
+    if not df.empty:
+        print('not empty: ',label)
+        df = df.dropna()
+        
+        # convert cnrg to integer
+        for cnrg in ['cnrgA','cnrgB','cnrgC']:
+            df[cnrg] = df[cnrg].astype(int)
+    else:
+        print('empty: ', label)
+    return df
+
 
 
 def send_data(mydf,device):
-    address = "http://localhost:8080"
     df = mydf.copy()
-    
-    r = requests.post(address + "/api/auth/login",json={'username': 'meazon-scripts@meazon.com', 'password': 'scr1pt!'}).json()
-    acc_token = 'Bearer' + ' ' + r['token']
 
-    # get devid of virtual
-    devid = get_devid(address, acc_token, device)
+    if not df.empty:
+        address = "http://localhost:8080"
+        
+        # get access token
+        r = requests.post(address + "/api/auth/login",json={'username': 'meazon-scripts@meazon.com', 'password': 'scr1pt!'}).json()
+        acc_token = 'Bearer' + ' ' + r['token']
 
-    r1 = requests.get(
-        url=address + "/api/device/" + devid + "/credentials",
-        headers={'Content-Type': 'application/json', 'Accept': '*/*', 'X-Authorization': acc_token}).json()
-    devtoken = r1['credentialsId']
-#     print('devtoken:',devtoken)
-    
-    df['ts'] = df.index
-    df['ts'] = df.apply(lambda row: int(row['ts'].timestamp()) * 1000, axis=1)
+        # get devid of virtual
+        devid = get_devid(address, acc_token, device)
+        
+        # get dev_token
+        r1 = requests.get(
+            url=address + "/api/device/" + devid + "/credentials",
+            headers={'Content-Type': 'application/json', 'Accept': '*/*', 'X-Authorization': acc_token}).json()
+        devtoken = r1['credentialsId']
+        
+        # transform ts and write telemetry
+        df['ts'] = df.index
+        df['ts'] = df.apply(lambda row: int(row['ts'].timestamp()) * 1000, axis=1)
+        df.set_index('ts', inplace=True, drop=True)
 
-    df.set_index('ts', inplace=True, drop=True)
+        mydict = df.to_dict('index')
 
-    mydict = df.to_dict('index')
-
-    for key, value in mydict.items():
-        my_json = json.dumps({'ts': key, 'values': value})
-        r = requests.post(url=address + "/api/v1/" + devtoken + "/telemetry",
-                          data=my_json, headers={'Content-Type': 'application/json', 'Accept': '*/*',
-                                                 'X-Authorization': acc_token})
+        for key, value in mydict.items():
+            my_json = json.dumps({'ts': key, 'values': value})
+            r = requests.post(url=address + "/api/v1/" + devtoken + "/telemetry",
+                            data=my_json, headers={'Content-Type': 'application/json', 'Accept': '*/*',
+                                                    'X-Authorization': acc_token})
     return 
     
 
@@ -219,43 +234,25 @@ def main():
         #print(operation)
         agg = create_virtual(start_time, end_time,descriptors,submeters,operation,1,acc_token)
         print(agg)
-        if not agg.empty:
-            print('agg is not empty')
-            agg = agg.dropna()
-            
-            
-            # convert cnrg to integer
-            for cnrg in ['cnrgA','cnrgB','cnrgC']:
-                agg[cnrg] = agg[cnrg].astype(int)
-            if not agg.empty:
-                send_data(agg,virtualName)
-                print('Completed ',virtualName)
-        else:
-            print('agg is empty')
+
+        agg = postproc(agg, virtualName)
+        send_data(agg,virtualName)
+        print('Completed ',virtualName)
+        
     
     # end of layer 1
     ################################################################
     
     # Virtual meter Synolo Texnologias (Synolo statheris, Kiniti synolo)
-
-    tmp_virtual = 'Σύνολο Τεχνολογίας'
+    virtualName = 'Σύνολο Τεχνολογίας'
     texnologia = ['Σύνολο Σταθερής', # Synolo statheris
                    'Κινητή Σύνολο'] # Kinitis synolo
     
     operation=1 # add meters
     tech_df = create_virtual(start_time, end_time,descriptors,texnologia,operation,1,acc_token)
-    
-    if not tech_df.empty:
-        print('tech_df is not empty')
-        tech_df = tech_df.dropna()
-        
-        # convert cnrg to integer
-        for cnrg in ['cnrgA','cnrgB','cnrgC']:
-            tech_df[cnrg] = tech_df[cnrg].astype(int)
-
-        if not tech_df.empty:
-            send_data(tech_df,tmp_virtual)
-            print('Completed tech')
+    tech_df = postproc(tech_df, virtualName)
+    send_data(tech_df,virtualName)
+    print('Completed ', virtualName)
     
     ################################################################
     
@@ -275,15 +272,9 @@ def main():
                      '102.402.000028'] # UPS 1 - M21
     
     operation=1
-    
     agg1 = create_virtual(start_time, end_time,descriptors,athr_grafeiwn,operation,1,acc_token)
-    #print("athr graf",agg1)
-    if not agg1.empty:
-        agg1 = agg1.dropna()
-            
-        for cnrg in ['cnrgA','cnrgB','cnrgC']:
-            agg1[cnrg] = agg1[cnrg].astype(int)
-    
+    agg1 = postproc(agg1,'Άθροισμα γραφείων')
+     
     
     # Synolo kinitis, statheris, paroxwn, katastimatos  (den grafetai) 
     synolo_kinstath = ['Σύνολο Παρόχων', # V09
@@ -291,34 +282,32 @@ def main():
                        'Κινητή Σύνολο', # M23
                        '102.301.000896'] # Synolo katastimatos cosmote shop
     agg2 = create_virtual(start_time, end_time,descriptors,synolo_kinstath,operation,1,acc_token)
-    #print("synolo kin stath",agg2)
-    if not agg2.empty:
-        agg2 = agg2.dropna()
-            
-        for cnrg in ['cnrgA','cnrgB','cnrgC']:
-            agg2[cnrg] = agg2[cnrg].astype(int)
+    agg2 = postproc(agg2,'Σύνολο κινητής, σταθερής, παρόχων, καταστήματος')
+   
             
 #######################################################################################            
+    # Ypoloipa katastimatos = Cosmote shop - (fwtismos katastimatos + klimatismos)
+
     # Fwtismos katastimatos+klimatismos
-    fwtismos_klimatismos = ['102.301.001108','102.301.001128','102.301.001102']
+    fwtismos_klimatismos = ['102.301.001108', # Φωτισμός - Πρίζες 
+                            '102.301.001128', # Φωτισμός - Φώτα Νυκτός 
+                            '102.301.001102'] # Klimatismos katastimatos
     operation=1
     fwt_kl = create_virtual(start_time, end_time,descriptors,fwtismos_klimatismos,operation,1,acc_token)
-    
-    if not fwt_kl.empty:
-        fwt_kl = fwt_kl.dropna()
-            
-        for cnrg in ['cnrgA','cnrgB','cnrgC']:
-            fwt_kl[cnrg] = fwt_kl[cnrg].astype(int)
+    fwt_kl = postproc(fwt_kl,'Φωτισμός καταστήματος, κλιματισμός')
+
     
     # 102.301.000896 -Fwtismos_klimatismos
-    devid = '53098be0-bb38-11ec-b33d-07b37ee02f32'
+    virtualName = 'Υπόλοιπα Καταστήματος'
+    device = '102.301.000896' # Cosmote shop
+    devid = get_devid(address, acc_token, device)
     df = read_data(devid, acc_token, address, start_time, end_time,descriptors)
     df = df.dropna()
     
     if not df.empty:
         for cnrg in ['cnrgA','cnrgB','cnrgC']:
             df[cnrg] = df[cnrg].astype(int)
-        if (not fwt_kl.empty):
+        if not fwt_kl.empty:
             agg = pd.DataFrame([])
             agg = df.copy()
             cols = ['cnrgA','cnrgB','cnrgC','pwrA','pwrB','pwrC','curA','curB','curC']
@@ -330,9 +319,8 @@ def main():
                     
             agg.dropna(inplace=True)
             del fwt_kl
-            
-            if not agg.empty:
-                send_data(agg,'06a25df0-bef2-11ec-b33d-07b37ee02f32') # write to Ypoloipa katastimatos (virtual meter)
+     
+            send_data(agg,virtualName) # write to Ypoloipa katastimatos (virtual meter)
     
         
 #######################################################################################
@@ -343,7 +331,7 @@ def main():
     devid = get_devid(address, acc_token, device)
     df = read_data(devid, acc_token, address, start_time, end_time,descriptors)
     df = df.dropna()
-    #print("main",df)
+    
     if not df.empty:
         for cnrg in ['cnrgA','cnrgB','cnrgC']:
             df[cnrg] = df[cnrg].astype(int)
@@ -354,6 +342,7 @@ def main():
             cols = ['cnrgA','cnrgB','cnrgC','pwrA','pwrB','pwrC','curA','curB','curC']
             agg[cols] = agg[cols].sub(agg1[cols])
             agg[['vltA','vltB','vltC']] = agg[['vltA','vltB','vltC']].add(agg1[['vltA','vltB','vltC']])
+
             agg[cols] = agg[cols].sub(agg2[cols])
             agg[['vltA','vltB','vltC']] = agg[['vltA','vltB','vltC']].add(agg2[['vltA','vltB','vltC']])
             
@@ -364,13 +353,13 @@ def main():
             del agg2
             
             if not agg.empty:
-                tmp_virtual = 'Υπόλοιπα Φορτία Γραφείων'
-                send_data(agg,tmp_virtual)
+                virtualName = 'Υπόλοιπα Φορτία Γραφείων'
+                send_data(agg,virtualName)
     
     # end of layer 2
     ################################################################
-    #Synolo grafeiwn
-    tmp_virtual = 'Σύνολο Γραφείων'
+    #Synolo grafeiwn = Other + athroisma grafeiwn
+    virtualName = 'Σύνολο Γραφείων'
     if not agg.empty:
         agg = agg.add(agg1)
         for vlt in ['vltA','vltB','vltC']:
@@ -378,9 +367,7 @@ def main():
         
         del agg1
         agg.dropna(inplace=True)
-        if not agg.empty:
-            #print("sunolo grafio",agg)
-            send_data(agg,tmp_virtual) 
+        send_data(agg, virtualName) 
     
     
     
