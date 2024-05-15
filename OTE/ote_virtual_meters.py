@@ -161,6 +161,9 @@ def send_data(mydf, device, address):
     Write telemetry data to the API.
     """
     df = mydf.copy()
+    for nrg in ['cnrgA','cnrgB','cnrgC']:
+        df.loc[df[nrg]<df[nrg].shift(), nrg]=np.nan
+    df = df.dropna()
     if df.empty:
         return
     
@@ -254,8 +257,8 @@ def main():
     
     start_time = str(int(start_time.timestamp()) * 1000)
     end_time = str(int(end_time.timestamp()) * 1000)
-    start_time = '1711962000000'
-    end_time = '1715763600000'
+    #start_time = '1711962000000'
+    #end_time = '1715763600000'
 
     # iterate over meters
     for virtualName,submeters in virtualMeters.items():
