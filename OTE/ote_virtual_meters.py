@@ -131,13 +131,15 @@ def create_virtual(start_time, end_time,descriptors,vrtl,operation,layer, acc_to
 
 
 
-
-def send_data(mydf,devid):
+def send_data(mydf,device):
     address = "http://localhost:8080"
     df = mydf.copy()
     
     r = requests.post(address + "/api/auth/login",json={'username': 'meazon-scripts@meazon.com', 'password': 'scr1pt!'}).json()
     acc_token = 'Bearer' + ' ' + r['token']
+
+    # get devid of virtual
+    devid = get_devid(address, acc_token, device)
 
     r1 = requests.get(
         url=address + "/api/device/" + devid + "/credentials",
@@ -163,50 +165,33 @@ def send_data(mydf,devid):
 
 def main():
 
+    address = "http://localhost:8080"    
+    
+    # virtual devices' names
+    virtualMeters = {'Απαραίτητα':
+                                ['102.216.000652','102.216.000649'], # M06, M07
+                    'Κλιματισμός Γραφείων': #V01
+                                ['102.301.000976','102.301.000968','102.301.000969'], # M02, M09, M10
+                    'Φωτισμός Γραφείων': # V02
+                                ['102.301.000963','102.301.000869','102.301.000870','102.301.000850','102.301.000865','102.301.000868'], # M03, M04, M05, M11, M12, M14
+                    'UPS Γραφείων': # V03
+                                ['102.402.000037','102.402.000028'], # M20, M21
+                    'Φορτία κίνησης (3) γραφείων': # V04
+                                ['102.301.000970'], # M01
+                    'Σύνολο Παρόχων': # V09
+                                ['102.402.000039','102.301.000921'], # Μ22, Μ18
+                    'Σύνολο Σταθερής': # V10
+                                ['102.301.000923','102.301.000916','102.301.000935','102.301.000978'], # Μ19, Μ17, Μ15, Μ16
+                    'Κλιματισμός Σταθερής': # V11
+                                ['102.301.000916','102.301.000935','102.301.000978'], # Μ17, Μ15, Μ16
+                    'Φωτισμός Καταστήματος':
+                                ['102.301.001108','102.301.001128'], # Φωτισμός - Πρίζες, Φωτισμός - Φώτα Νυκτός 
+                    'Κλιματισμός Κινητής': # V07
+                                ['102.402.000031','102.402.000035'] # Μ23, Μ24
+    }
+    
 
-    address = "http://localhost:8080"
-    
-    #Aparaitita
-    
-    vrtl0 = ['102.216.000652','102.216.000649'] 
-    #Klimatismos grafeiwn
-    vrtl1 = ['102.301.000976','102.301.000968','102.301.000969']
-    
-    #Fwtismos grafeiwn
-    vrtl2 = ['102.301.000963','102.301.000869','102.301.000870','102.301.000850','102.301.000865','102.301.000868']
-    
-    #UPS grafeiwn
-    vrtl3 = ['102.402.000037','102.402.000028']
-    
-    #Fortia kinisis (3) grafeiwn
-    vrtl4 = ['102.301.000970','102.301.000923']
-    
-    #Synolo paroxwn
-    vrtl5 = ['102.402.000039','102.301.000921']
-    
-    #Synolo statheris
-    vrtl6 = ['102.301.000923','102.301.000916','102.301.000935','102.301.000978']
-    
-    #Klimatismos texnologias statheris (+)
-    vrtl7 = ['102.301.000916','102.301.000935','102.301.000978']
-    
-    #Fwtismos katastimatos
-    vrtl8 = ['102.301.001108','102.301.001128']
-    
-    #Klimatismos kinitis (-)
-    vrtl9 = ['102.402.000031','102.402.000035']
-    
-    
-    
-    
-    # devids for virtual meters
-    vdevids = ['767bd9e0-829c-11ec-ab8f-ef1ea7f487fc','e8652270-19e5-11ec-ab8f-ef1ea7f487fc','0445f9b0-19e6-11ec-ab8f-ef1ea7f487fc','0c1aacd0-19e6-11ec-ab8f-ef1ea7f487fc','1415aca0-19e6-11ec-ab8f-ef1ea7f487fc','69dd5c50-19e6-11ec-ab8f-ef1ea7f487fc','7df3e0b0-19e6-11ec-ab8f-ef1ea7f487fc','84e16820-19e6-11ec-ab8f-ef1ea7f487fc', 'b4274890-beee-11ec-b33d-07b37ee02f32','486cdff0-19e6-11ec-ab8f-ef1ea7f487fc']
-    
-    
-    virtualMeters=[vrtl0]+[vrtl1]+[vrtl2]+[vrtl3]+[vrtl4]+[vrtl5]+[vrtl6]+[vrtl7]+[vrtl8]+[vrtl9]
-    
-    
-    # define descriptors and request token
+    # define descriptors and access token
     descriptors = 'cnrgA,cnrgB,cnrgC,pwrA,pwrB,pwrC,curA,curB,curC,vltA,vltB,vltC'
     r = requests.post(address + "/api/auth/login",json={'username': 'meazon-scripts@meazon.com', 'password': 'scr1pt!'}).json()
     acc_token = 'Bearer' + ' ' + r['token']
@@ -223,18 +208,16 @@ def main():
     start_time = str(int(start_time.timestamp()) * 1000)
     end_time = str(int(end_time.timestamp()) * 1000)
     
-    #end_time = '1712523600000'# 7-8 april
-    #start_time = '1712437200000'
-    # iterate over meters
-    
-    for i in range(0,len(virtualMeters)):
 
-        if i==len(virtualMeters)-1:
+    # iterate over meters
+    for virtualName,submeters in virtualMeters.items():
+
+        if virtualName=='Κλιματισμός Κινητής':
             operation=0 # sub
         else:
             operation=1 #add
         #print(operation)
-        agg = create_virtual(start_time, end_time,descriptors,virtualMeters[i],operation,1,acc_token)
+        agg = create_virtual(start_time, end_time,descriptors,submeters,operation,1,acc_token)
         print(agg)
         if not agg.empty:
             print('agg is not empty')
@@ -245,51 +228,51 @@ def main():
             for cnrg in ['cnrgA','cnrgB','cnrgC']:
                 agg[cnrg] = agg[cnrg].astype(int)
             if not agg.empty:
-                send_data(agg,vdevids[i])
-                print('Completed ',i)
+                send_data(agg,virtualName)
+                print('Completed ',virtualName)
         else:
             print('agg is empty')
     
     # end of layer 1
     ################################################################
     
-    # Virtual meter Xrisi Texnologias (Synolo statheris, Kiniti synolo)
+    # Virtual meter Synolo Texnologias (Synolo statheris, Kiniti synolo)
+
+    tmp_virtual = 'Σύνολο Τεχνολογίας'
+    texnologia = ['Σύνολο Σταθερής', # Synolo statheris
+                   'Κινητή Σύνολο'] # Kinitis synolo
     
-    texnologia = ['7df3e0b0-19e6-11ec-ab8f-ef1ea7f487fc', '9997b670-942c-11ea-8c14-6192a0efe6e6']
-    tmpdevid = 'a3504fe0-8437-11ec-ab8f-ef1ea7f487fc'
-    operation=1
-    tech_df = create_virtual(start_time, end_time,descriptors,texnologia,operation,2,acc_token)
+    operation=1 # add meters
+    tech_df = create_virtual(start_time, end_time,descriptors,texnologia,operation,1,acc_token)
     
     if not tech_df.empty:
         print('tech_df is not empty')
-        
         tech_df = tech_df.dropna()
-        
         
         # convert cnrg to integer
         for cnrg in ['cnrgA','cnrgB','cnrgC']:
             tech_df[cnrg] = tech_df[cnrg].astype(int)
+
         if not tech_df.empty:
-            
-            send_data(tech_df,tmpdevid)
-            print('Completed tech',)
+            send_data(tech_df,tmp_virtual)
+            print('Completed tech')
     
     ################################################################
     
-    # Athroisma grafeiwn (den grafetai)
-    athr_grafeiwn = ['102.301.000870',# Fwtismos pinaka
-                     '102.301.000963',# Mparokivotia fwtismos
-                     '102.301.000850',# Fwtismos isogeio
-                     '102.301.000869',# Fwtismos 5ou
-                     '102.301.000868',# Fwtismos 3ou
-                     '102.301.000865',# Fwtismos 1ou
-                     '102.301.000970',# Fortia kinisis grafeiwn 3os
-                     '102.301.000867',# Fortia kinisis 1os
-                     '102.301.000969',#Klimatismos 5ou
-                     '102.301.000976',#Klimatismos 3ou
-                     '102.301.000968',#Klimatismos 1ou
-                     '102.402.000037', #UPS 2
-                     '102.402.000028'] # UPS 1
+    # Synolo grafeiwn (den grafetai)
+    athr_grafeiwn = ['102.301.000870',# Fwtismos pinaka - M05
+                     '102.301.000963',# Mparokivotia fwtismos - M03
+                     '102.301.000850',# Fwtismos isogeio - M11
+                     '102.301.000869',# Fwtismos 5ou - M04
+                     '102.301.000868',# Fwtismos 3ou - M14
+                     '102.301.000865',# Fwtismos 1ou - M12
+                     '102.301.000970',# Fortia kinisis grafeiwn 3os - M01
+                     '102.301.000867',# Fortia kinisis 1os - M13
+                     '102.301.000969',#Klimatismos 5ou - M10
+                     '102.301.000976',#Klimatismos 3ou - M02
+                     '102.301.000968',#Klimatismos 1ou - M09
+                     '102.402.000037', #UPS 2 - M20
+                     '102.402.000028'] # UPS 1 - M21
     
     operation=1
     
@@ -302,11 +285,12 @@ def main():
             agg1[cnrg] = agg1[cnrg].astype(int)
     
     
-    # Synolo kinitis statheris  (den grafetai) #,9997b670-942c-11ea-8c14-6192a0efe6e6,,"""'69dd5c50-19e6-11ec-ab8f-ef1ea7f487fc','7df3e0b0-19e6-11ec-ab8f-ef1ea7f487fc'
-    synolo_kinstath = ['63a6b040-5947-11ea-8762-6bf954fc5af1',
-                       '992a9cc0-942c-11ea-8c14-6192a0efe6e6',
-                       '9997b670-942c-11ea-8c14-6192a0efe6e6']
-    agg2 = create_virtual(start_time, end_time,descriptors,synolo_kinstath,operation,2,acc_token)
+    # Synolo kinitis, statheris, paroxwn, katastimatos  (den grafetai) 
+    synolo_kinstath = ['Σύνολο Παρόχων', # V09
+                       'Σύνολο Σταθερής', # V10
+                       'Κινητή Σύνολο', # M23
+                       '102.301.000896'] # Synolo katastimatos cosmote shop
+    agg2 = create_virtual(start_time, end_time,descriptors,synolo_kinstath,operation,1,acc_token)
     #print("synolo kin stath",agg2)
     if not agg2.empty:
         agg2 = agg2.dropna()
@@ -353,9 +337,10 @@ def main():
         
 #######################################################################################
     
-    # Ypoloipa fortia xrisi grafeiwn
-    # 102.216.000654 - athroisma grafeiwn - synolo kinitis statheris
-    devid = 'da260200-57e6-11ea-8762-6bf954fc5af1'#'da260200-57e6-11ea-8762-6bf954fc5af1'
+    # Ypoloipa fortia xrisi grafeiwn: Genikos - athroisma grafeiwn - synolo kinitis/statheris/paroxwn/katastimatos
+    
+    device = 'Συνολική κατανάλωση κτ. Αθηνάς'
+    devid = get_devid(address, acc_token, device)
     df = read_data(devid, acc_token, address, start_time, end_time,descriptors)
     df = df.dropna()
     #print("main",df)
@@ -379,12 +364,13 @@ def main():
             del agg2
             
             if not agg.empty:
-                send_data(agg,'21c14710-19e6-11ec-ab8f-ef1ea7f487fc')
+                tmp_virtual = 'Υπόλοιπα Φορτία Γραφείων'
+                send_data(agg,tmp_virtual)
     
     # end of layer 2
     ################################################################
     #Synolo grafeiwn
-    
+    tmp_virtual = 'Σύνολο Γραφείων'
     if not agg.empty:
         agg = agg.add(agg1)
         for vlt in ['vltA','vltB','vltC']:
@@ -394,7 +380,7 @@ def main():
         agg.dropna(inplace=True)
         if not agg.empty:
             #print("sunolo grafio",agg)
-            send_data(agg,'288d15b0-19e6-11ec-ab8f-ef1ea7f487fc') #288d15b0-19e6-11ec-ab8f-ef1ea7f487fc
+            send_data(agg,tmp_virtual) 
     
     
     
