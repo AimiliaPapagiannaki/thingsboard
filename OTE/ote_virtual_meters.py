@@ -20,6 +20,9 @@ import pytz
 
 
 def align_resample(df,interv):
+    """
+    Aligns and resamples the DataFrame to the specified interval.
+    """
    
     df['ts'] = df.index
     df['ts'] = df['ts'].dt.tz_localize('utc')
@@ -32,75 +35,83 @@ def align_resample(df,interv):
 
 
 
-def read_data(devid, acc_token, address, start_time, end_time,descriptors):
+def read_data(devid, acc_token, address, start_time, end_time, descriptors):
+    """
+    Reads data from the API and returns a DataFrame.
+    """
     df = pd.DataFrame([])
+    offset = 30 * 86400000 if int(end_time) - int(start_time) > 30 * 86400000 else 86400000
+    svec = np.arange(int(start_time), int(end_time), offset)
     
-    if int(end_time)-int(start_time)>(30*86400000):
-        offset = 30*86400000
-    else:
-        offset = 86400000
-    svec = np.arange(int(start_time), int(end_time), offset) # 1 day
     for st in svec:
         en = st + offset - 1
+        en = int(end_time) if int(end_time) - en <= 0 else en
 
-        if int(end_time) - en <= 0: en = int(end_time)
-        tmp = pd.DataFrame([])
+        try:
+            response = requests.get(
+                url=f"{address}/api/plugins/telemetry/DEVICE/{devid}/values/timeseries",
+                params={
+                    "keys": descriptors,
+                    "startTs": start_time,
+                    "endTs": end_time,
+                    "agg": "NONE",
+                    "limit": 1000000
+                },
+                headers={
+                    'Content-Type': 'application/json',
+                    'Accept': '*/*',
+                    'X-Authorization': acc_token
+                }
+            )
+            r2 = response.json()
 
-        r2 = requests.get(url=address + "/api/plugins/telemetry/DEVICE/" + devid + "/values/timeseries?keys="+descriptors+"&startTs=" + start_time + "&endTs=" + end_time + "&agg=NONE&limit=1000000",
-            headers={'Content-Type': 'application/json', 'Accept': '*/*', 'X-Authorization': acc_token}).json()
-        if ((len(r2.keys())>0) & (len(descriptors)>0)):
-
-
-            # read all descriptors at once
-            for desc in r2.keys():
-                try:
-                    df1 = pd.DataFrame(r2[desc])
-                    df1.set_index('ts', inplace=True)
-                    df1.columns = [str(desc)]
-                    tmp = pd.concat([tmp,df1], axis = 1)
-                except:
-                    continue
-
-
-            if not tmp.empty:
-
+            if r2:
+                tmp = pd.concat(
+                    [pd.DataFrame(r2[desc]).rename(columns={'value': desc}).set_index('ts') for desc in r2],
+                    axis=1
+                )
                 tmp.reset_index(drop=False, inplace=True)
                 tmp['ts'] = pd.to_datetime(tmp['ts'], unit='ms')
-
-                # Set timestamp as index, convert all columns to float
-                tmp = tmp.sort_values(by=['ts'])
-                tmp.reset_index(drop=True, inplace=True)
-                tmp.set_index('ts',inplace = True, drop = True)
+                tmp.sort_values(by=['ts'], inplace=True)
+                tmp.set_index('ts', inplace=True, drop=True)
                 df = pd.concat([df, tmp])
 
-                      
+        except Exception as e:
+            print(f"Error reading data for device {devid}: {e}")
+            continue
+
     if not df.empty:
-        for col in df.columns:
-            df[col] = df[col].astype('float')
-        #df = df.add_suffix('_'+str(incr))
-                
+        df = df.apply(pd.to_numeric, errors='coerce')
         df = align_resample(df, '1h')
+    
     return df
 
-def get_devid(address,acc_token, device):
-    r1 = requests.get( url=address + "/api/tenant/devices?deviceName=" + device,
-                    headers={'Content-Type': 'application/json', 'Accept': '*/*', 'X-Authorization': acc_token}).json()
-    devid = r1['id']['id']
-    
-    return devid
+
+def get_devid(address, acc_token, device):
+    """
+    Retrieves the device ID for the given device name.
+    """
+    response = requests.get(
+        url=f"{address}/api/tenant/devices",
+        params={"deviceName": device},
+        headers={
+            'Content-Type': 'application/json',
+            'Accept': '*/*',
+            'X-Authorization': acc_token
+        }
+    )
+    return response.json()['id']['id']
     
 
-def create_virtual(start_time, end_time,descriptors,vrtl,operation,layer, acc_token):
-    address = "http://localhost:8080"
+
+def create_virtual(start_time, end_time,descriptors,vrtl,operation,layer, acc_token, address):
+    """
+    Creates a virtual DataFrame by aggregating data from multiple devices.
+    """
     agg = pd.DataFrame([])
     try:
         for virtual in vrtl:
-            if layer==1:
-                print(virtual)
-                # request devid
-                devid = get_devid(address,acc_token, virtual)
-            else:
-                devid = virtual
+            devid = get_devid(address, acc_token, virtual) if layer == 1 else virtual
     
             df = read_data(devid, acc_token, address, start_time, end_time,descriptors)
             if not df.empty:
@@ -115,21 +126,22 @@ def create_virtual(start_time, end_time,descriptors,vrtl,operation,layer, acc_to
                 else:
                     agg = df
             else:
-                agg = pd.DataFrame([])
-                break
-            del df
+                return pd.DataFrame([])
+            
         if not agg.empty:
             
             for vlt in ['vltA','vltB','vltC']:
                 agg[vlt] = agg[vlt]/2
-    except:
-        print('Unable to retrieve data for all virtuals')
-        pass
-    agg = agg.dropna()
-    return agg
+    except Exception as e:
+        print(f"Unable to retrieve data for all virtuals: {e}")
+        
+    return agg.dropna()
 
 
 def postproc(df, label):
+    """
+    Post-processes the DataFrame.
+    """
     if not df.empty:
         print('not empty: ',label)
         df = df.dropna()
@@ -143,23 +155,33 @@ def postproc(df, label):
 
 
 
-def send_data(mydf,device):
-    df = mydf.copy()
-
-    if not df.empty:
-        address = "http://localhost:8080"
+def send_data(df, device, address):
+    """
+    Write telemetry data to the API.
+    """
+    if df.empty:
+        return
+    
+    try:
         
-        # get access token
-        r = requests.post(address + "/api/auth/login",json={'username': 'meazon-scripts@meazon.com', 'password': 'scr1pt!'}).json()
-        acc_token = 'Bearer' + ' ' + r['token']
+        r = requests.post(
+            f"{address}/api/auth/login",
+            json={'username': 'meazon-scripts@meazon.com', 'password': 'scr1pt!'}
+        ).json()
+        acc_token = 'Bearer ' + r['token']
 
         # get devid of virtual
         devid = get_devid(address, acc_token, device)
         
         # get dev_token
         r1 = requests.get(
-            url=address + "/api/device/" + devid + "/credentials",
-            headers={'Content-Type': 'application/json', 'Accept': '*/*', 'X-Authorization': acc_token}).json()
+            url=f"{address}/api/device/{devid}/credentials",
+            headers={
+                'Content-Type': 'application/json',
+                'Accept': '*/*',
+                'X-Authorization': acc_token
+            }
+        ).json()
         devtoken = r1['credentialsId']
         
         # transform ts and write telemetry
@@ -171,10 +193,18 @@ def send_data(mydf,device):
 
         for key, value in mydict.items():
             my_json = json.dumps({'ts': key, 'values': value})
-            r = requests.post(url=address + "/api/v1/" + devtoken + "/telemetry",
-                            data=my_json, headers={'Content-Type': 'application/json', 'Accept': '*/*',
-                                                    'X-Authorization': acc_token})
-    return 
+            requests.post(
+                url=f"{address}/api/v1/{devtoken}/telemetry",
+                data=my_json,
+                headers={
+                    'Content-Type': 'application/json',
+                    'Accept': '*/*',
+                    'X-Authorization': acc_token
+                }
+            )
+    except Exception as e:
+        print(f"Error sending data for device {device}: {e}")
+     
     
 
 
@@ -232,11 +262,11 @@ def main():
         else:
             operation=1 #add
         #print(operation)
-        agg = create_virtual(start_time, end_time,descriptors,submeters,operation,1,acc_token)
+        agg = create_virtual(start_time, end_time,descriptors,submeters,operation,1,acc_token, address)
         print(agg)
 
         agg = postproc(agg, virtualName)
-        send_data(agg,virtualName)
+        send_data(agg,virtualName, address)
         print('Completed ',virtualName)
         
     
@@ -249,9 +279,9 @@ def main():
                    'Κινητή Σύνολο'] # Kinitis synolo
     
     operation=1 # add meters
-    tech_df = create_virtual(start_time, end_time,descriptors,texnologia,operation,1,acc_token)
+    tech_df = create_virtual(start_time, end_time,descriptors,texnologia,operation,1,acc_token, address)
     tech_df = postproc(tech_df, virtualName)
-    send_data(tech_df,virtualName)
+    send_data(tech_df,virtualName, address)
     print('Completed ', virtualName)
     
     ################################################################
@@ -272,7 +302,7 @@ def main():
                      '102.402.000028'] # UPS 1 - M21
     
     operation=1
-    agg1 = create_virtual(start_time, end_time,descriptors,athr_grafeiwn,operation,1,acc_token)
+    agg1 = create_virtual(start_time, end_time,descriptors,athr_grafeiwn,operation,1,acc_token, address)
     agg1 = postproc(agg1,'Άθροισμα γραφείων')
      
     
@@ -281,7 +311,7 @@ def main():
                        'Σύνολο Σταθερής', # V10
                        'Κινητή Σύνολο', # M23
                        '102.301.000896'] # Synolo katastimatos cosmote shop
-    agg2 = create_virtual(start_time, end_time,descriptors,synolo_kinstath,operation,1,acc_token)
+    agg2 = create_virtual(start_time, end_time,descriptors,synolo_kinstath,operation,1,acc_token, address)
     agg2 = postproc(agg2,'Σύνολο κινητής, σταθερής, παρόχων, καταστήματος')
    
             
@@ -293,7 +323,7 @@ def main():
                             '102.301.001128', # Φωτισμός - Φώτα Νυκτός 
                             '102.301.001102'] # Klimatismos katastimatos
     operation=1
-    fwt_kl = create_virtual(start_time, end_time,descriptors,fwtismos_klimatismos,operation,1,acc_token)
+    fwt_kl = create_virtual(start_time, end_time,descriptors,fwtismos_klimatismos,operation,1,acc_token, address)
     fwt_kl = postproc(fwt_kl,'Φωτισμός καταστήματος, κλιματισμός')
 
     
@@ -320,7 +350,7 @@ def main():
             agg.dropna(inplace=True)
             del fwt_kl
      
-            send_data(agg,virtualName) # write to Ypoloipa katastimatos (virtual meter)
+            send_data(agg,virtualName, address) # write to Ypoloipa katastimatos (virtual meter)
     
         
 #######################################################################################
@@ -354,7 +384,7 @@ def main():
             
             if not agg.empty:
                 virtualName = 'Υπόλοιπα Φορτία Γραφείων'
-                send_data(agg,virtualName)
+                send_data(agg,virtualName, address)
     
     # end of layer 2
     ################################################################
@@ -367,7 +397,7 @@ def main():
         
         del agg1
         agg.dropna(inplace=True)
-        send_data(agg, virtualName) 
+        send_data(agg, virtualName, address) 
     
     
     
