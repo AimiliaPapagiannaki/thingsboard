@@ -120,18 +120,19 @@ def create_virtual(start_time, end_time,descriptors,vrtl,operation,layer, acc_to
                         agg = agg.add(df)#,fill_value=0)
                     else:
                         cols = ['cnrgA','cnrgB','cnrgC','pwrA','pwrB','pwrC','curA','curB','curC']
-                        agg[cols] = agg[cols].sub(df[cols])#, fill_value=0)
-                        agg[['vltA','vltB','vltC']] = agg[['vltA','vltB','vltC']].add(df[['vltA','vltB','vltC']])
+                        agg = agg.sub(df)#, fill_value=0)
+                        #agg[cols] = agg[cols].sub(df[cols])#, fill_value=0)
+                        #agg[['vltA','vltB','vltC']] = agg[['vltA','vltB','vltC']].add(df[['vltA','vltB','vltC']])
                         
                 else:
                     agg = df
             else:
                 return pd.DataFrame([])
             
-        if not agg.empty:
+        # if not agg.empty:
             
-            for vlt in ['vltA','vltB','vltC']:
-                agg[vlt] = agg[vlt]/2
+        #     for vlt in ['vltA','vltB','vltC']:
+        #         agg[vlt] = agg[vlt]/2
     except Exception as e:
         print(f"Unable to retrieve data for all virtuals: {e}")
         
@@ -155,10 +156,11 @@ def postproc(df, label):
 
 
 
-def send_data(df, device, address):
+def send_data(mydf, device, address):
     """
     Write telemetry data to the API.
     """
+    df = mydf.copy()
     if df.empty:
         return
     
@@ -237,7 +239,7 @@ def main():
     
 
     # define descriptors and access token
-    descriptors = 'cnrgA,cnrgB,cnrgC,pwrA,pwrB,pwrC,curA,curB,curC,vltA,vltB,vltC'
+    descriptors = 'cnrgA,cnrgB,cnrgC,pwrA,pwrB,pwrC,curA,curB,curC'#,vltA,vltB,vltC'
     r = requests.post(address + "/api/auth/login",json={'username': 'meazon-scripts@meazon.com', 'password': 'scr1pt!'}).json()
     acc_token = 'Bearer' + ' ' + r['token']
         
@@ -252,7 +254,8 @@ def main():
     
     start_time = str(int(start_time.timestamp()) * 1000)
     end_time = str(int(end_time.timestamp()) * 1000)
-    
+    start_time = '1711962000000'
+    end_time = '1715763600000'
 
     # iterate over meters
     for virtualName,submeters in virtualMeters.items():
@@ -263,9 +266,9 @@ def main():
             operation=1 #add
         #print(operation)
         agg = create_virtual(start_time, end_time,descriptors,submeters,operation,1,acc_token, address)
-        print(agg)
 
         agg = postproc(agg, virtualName)
+        print(virtualName,agg.tail(15))
         send_data(agg,virtualName, address)
         print('Completed ',virtualName)
         
@@ -276,11 +279,12 @@ def main():
     # Virtual meter Synolo Texnologias (Synolo statheris, Kiniti synolo)
     virtualName = 'Σύνολο Τεχνολογίας'
     texnologia = ['Σύνολο Σταθερής', # Synolo statheris
-                   'Κινητή Σύνολο'] # Kinitis synolo
+                   '102.402.000031'] # Kinitis synolo
     
     operation=1 # add meters
     tech_df = create_virtual(start_time, end_time,descriptors,texnologia,operation,1,acc_token, address)
     tech_df = postproc(tech_df, virtualName)
+    print(virtualName,tech_df.tail(15))
     send_data(tech_df,virtualName, address)
     print('Completed ', virtualName)
     
@@ -304,16 +308,16 @@ def main():
     operation=1
     agg1 = create_virtual(start_time, end_time,descriptors,athr_grafeiwn,operation,1,acc_token, address)
     agg1 = postproc(agg1,'Άθροισμα γραφείων')
-     
+    print('Άθροισμα γραφείων',agg1.tail(15))
     
     # Synolo kinitis, statheris, paroxwn, katastimatos  (den grafetai) 
-    synolo_kinstath = ['Σύνολο Παρόχων', # V09
-                       'Σύνολο Σταθερής', # V10
-                       'Κινητή Σύνολο', # M23
+    synolo_kinstath = ['102.402.000039','102.301.000921', # V09 Synolo Paroxwn
+                       '102.301.000923','102.301.000916','102.301.000935','102.301.000978', # V10 Synolo statheris
+                       '102.402.000031', # M23 Synolo kinitis
                        '102.301.000896'] # Synolo katastimatos cosmote shop
     agg2 = create_virtual(start_time, end_time,descriptors,synolo_kinstath,operation,1,acc_token, address)
     agg2 = postproc(agg2,'Σύνολο κινητής, σταθερής, παρόχων, καταστήματος')
-   
+    print('Σύνολο κινητής, σταθερής, παρόχων, καταστήματος',agg2.tail(15))
             
 #######################################################################################            
     # Ypoloipa katastimatos = Cosmote shop - (fwtismos katastimatos + klimatismos)
@@ -325,7 +329,7 @@ def main():
     operation=1
     fwt_kl = create_virtual(start_time, end_time,descriptors,fwtismos_klimatismos,operation,1,acc_token, address)
     fwt_kl = postproc(fwt_kl,'Φωτισμός καταστήματος, κλιματισμός')
-
+    print('Φωτισμός καταστήματος, κλιματισμός',fwt_kl.tail(15))
     
     # 102.301.000896 -Fwtismos_klimatismos
     virtualName = 'Υπόλοιπα Καταστήματος'
@@ -341,15 +345,17 @@ def main():
             agg = pd.DataFrame([])
             agg = df.copy()
             cols = ['cnrgA','cnrgB','cnrgC','pwrA','pwrB','pwrC','curA','curB','curC']
-            agg[cols] = agg[cols].sub(fwt_kl[cols])
-            agg[['vltA','vltB','vltC']] = agg[['vltA','vltB','vltC']].add(fwt_kl[['vltA','vltB','vltC']])
+            agg = agg.sub(fwt_kl)
+            # agg[cols] = agg[cols].sub(fwt_kl[cols])
+
+            # agg[['vltA','vltB','vltC']] = agg[['vltA','vltB','vltC']].add(fwt_kl[['vltA','vltB','vltC']])
             
-            for vlt in ['vltA','vltB','vltC']:
-                    agg[vlt] = agg[vlt]/2
+            # for vlt in ['vltA','vltB','vltC']:
+            #         agg[vlt] = agg[vlt]/2
                     
             agg.dropna(inplace=True)
             del fwt_kl
-     
+            print(virtualName,agg.tail(15))
             send_data(agg,virtualName, address) # write to Ypoloipa katastimatos (virtual meter)
     
         
@@ -357,7 +363,7 @@ def main():
     
     # Ypoloipa fortia xrisi grafeiwn: Genikos - athroisma grafeiwn - synolo kinitis/statheris/paroxwn/katastimatos
     
-    device = 'Συνολική κατανάλωση κτ. Αθηνάς'
+    device = '102.216.000651' # Ktirio Athinas
     devid = get_devid(address, acc_token, device)
     df = read_data(devid, acc_token, address, start_time, end_time,descriptors)
     df = df.dropna()
@@ -370,17 +376,21 @@ def main():
             agg = pd.DataFrame([])
             agg = df.copy()
             cols = ['cnrgA','cnrgB','cnrgC','pwrA','pwrB','pwrC','curA','curB','curC']
-            agg[cols] = agg[cols].sub(agg1[cols])
-            agg[['vltA','vltB','vltC']] = agg[['vltA','vltB','vltC']].add(agg1[['vltA','vltB','vltC']])
+            agg = agg.sub(agg1)
+            # agg[cols] = agg[cols].sub(agg1[cols])
+            # agg[['vltA','vltB','vltC']] = agg[['vltA','vltB','vltC']].add(agg1[['vltA','vltB','vltC']])
 
-            agg[cols] = agg[cols].sub(agg2[cols])
-            agg[['vltA','vltB','vltC']] = agg[['vltA','vltB','vltC']].add(agg2[['vltA','vltB','vltC']])
+            agg = agg.sub(agg2)
+
+            # agg[cols] = agg[cols].sub(agg2[cols])
+            # agg[['vltA','vltB','vltC']] = agg[['vltA','vltB','vltC']].add(agg2[['vltA','vltB','vltC']])
             
-            for vlt in ['vltA','vltB','vltC']:
-                    agg[vlt] = agg[vlt]/2
+            # for vlt in ['vltA','vltB','vltC']:
+            #         agg[vlt] = agg[vlt]/2
             
             agg.dropna(inplace=True)
-            del agg2
+
+            print('OTHER:',agg)
             
             if not agg.empty:
                 virtualName = 'Υπόλοιπα Φορτία Γραφείων'
@@ -392,11 +402,12 @@ def main():
     virtualName = 'Σύνολο Γραφείων'
     if not agg.empty:
         agg = agg.add(agg1)
-        for vlt in ['vltA','vltB','vltC']:
-                agg[vlt] = agg[vlt]/2
+        # for vlt in ['vltA','vltB','vltC']:
+        #         agg[vlt] = agg[vlt]/2
         
         del agg1
         agg.dropna(inplace=True)
+        print(virtualName, agg.tail(15))
         send_data(agg, virtualName, address) 
     
     
