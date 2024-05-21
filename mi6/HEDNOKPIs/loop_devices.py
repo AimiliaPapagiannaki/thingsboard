@@ -11,8 +11,8 @@ import exportKPIs
 
 def main():
     
-    start_time = '1705788000000'
-    end_time = '1708466400000'
+    start_time = '1709244000000' # March 1
+    end_time = '1711918800000' # April 1
     #start_time = '1701381600000' # Dec 1st
     #end_time = '1708466400000' # Feb 21st
     
@@ -102,7 +102,7 @@ def main():
                           #pass
                 
         
-    summary.to_excel('HEDNO_KPIs_v3.xlsx', index=False)
+    summary.to_excel('HEDNO_KPIs_3_2024.xlsx', index=False)
     #summary.to_excel('testPwrAlarms.xlsx', index=False)        
             
             
