@@ -91,7 +91,7 @@ def read_data(acc_token, devid, address, start_time, end_time, descriptors):
     return df
 
 
-def detect_alarms(address, start_time, end_time, devid, acc_token, label,devtoken):
+def detect_alarms(address, start_time, end_time, devid, acc_token, device,devtoken):
     descriptors = 'vltA,vltB,vltC,curA,curB,curC'
     
     nominal = get_attr(acc_token,devid,address)
@@ -114,6 +114,7 @@ def detect_alarms(address, start_time, end_time, devid, acc_token, label,devtoke
         df = df[['overpwrA','overpwrB','overpwrC']]
         df = df.dropna(how='all')
         if not df.empty:
+            print('Alarm for device ',device)
             print(df)
             write_df(df, address, acc_token, devtoken)
         
@@ -130,6 +131,7 @@ def main():
     print(start_time, end_time)
     start_time = str(int(start_time.timestamp()) * 1000)
     end_time = str(int(end_time.timestamp()) * 1000)
+
     
     address = 'http://localhost:8080'
     # address = 'https://mi6.meazon.com'
@@ -146,7 +148,7 @@ def main():
     for i in range(0,len(r1['data'])):
         assetid = r1['data'][i]['id']['id']
         assetname = r1['data'][i]['name']
-        print(assetname)
+        
     
         if assetname[0]!='0':
         
@@ -155,13 +157,13 @@ def main():
             for j in range(0, len(r2)):
                 device = r2[j]['toName']
                 if device[:3]=='102':
-                    print(device)
+                    #print(device)
                                
                     # call export KPIs function
                     try:
                         [devid, acc_token, label, devtoken] = get_dev_info(device, address)                   
                         
-                        detect_alarms(address, start_time, end_time, devid, acc_token, label, devtoken)
+                        detect_alarms(address, start_time, end_time, devid, acc_token, device, devtoken)
                     except Exception as e:
                         print(f"Error reading data for device {device}: {e}")
                         continue
