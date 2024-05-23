@@ -10,13 +10,14 @@ from os import path
 import requests
 import numpy as np
 import time
+import pytz
 import json
 from dateutil.relativedelta import relativedelta
 from dateutil.tz import gettz
 import thingsio
 
 # ADDRESS = "http://localhost:8080"    
-ADDRESS = 'https://mi6.meazon.com'
+ADDRESS = "https://mi3.meazon.com"
 
 def align_resample(df,interv):
     """
@@ -25,6 +26,7 @@ def align_resample(df,interv):
    
     df['ts'] = df.index
     df['ts'] = df['ts'].dt.tz_localize('utc').dt.tz_convert('Europe/Athens')
+    # df['ts'] = df['ts'].dt.tz_localize('Europe/Athens')
     df.set_index('ts',inplace = True, drop = True)
     df = df.resample(interv).max()
 #     df = df.fillna(method="ffill")
@@ -110,7 +112,6 @@ def read_data(devid, acc_token, start_time, end_time, descriptors):
     datetime_index = datetime_index[:-1]
 
     tmp1 = pd.DataFrame(index=datetime_index)
-    
     df = pd.DataFrame([])
     offset = 30 * 86400000 if int(end_time) - int(start_time) > 30 * 86400000 else 86400000
     svec = np.arange(int(start_time), int(end_time), offset)
@@ -218,12 +219,12 @@ def send_data(mydf, device):
         return
     
     try:
-        
+        print(device, df)
         # transform ts and write telemetry
         df['ts'] = df.index
         df['ts'] = df.apply(lambda row: int(row['ts'].timestamp()) * 1000, axis=1)
         df.set_index('ts', inplace=True, drop=True)
-
+        df = df.sort_index()
         mydict = df.to_dict('index')
 
         l=[]
@@ -235,9 +236,10 @@ def send_data(mydf, device):
             l.append(newdict)
         # write to json and send telemetry to TB
         my_json = json.dumps(l)
-        print(device)
-        print(my_json)
+        
+        # print(my_json)
         #thingsio.send_telemetry(ADDRESS, device, my_json)
+        # print('Telemetry sent for device {}'.format(device))
 
     except Exception as e:
         print(f"Error sending data for device {device}: {e}")
@@ -281,11 +283,12 @@ def main():
     acc_token = thingsio.get_access_token(ADDRESS)
     
     #define start - end date
-    end_time = datetime.datetime.now()
+    end_time = datetime.datetime.now(pytz.timezone('Europe/Athens'))
     end_time = end_time - datetime.timedelta(hours=end_time.hour, minutes=end_time.minute, seconds=end_time.second,
-                                                 microseconds=end_time.microsecond)
+                                                    microseconds=end_time.microsecond)
     start_time = end_time +relativedelta(days=-5)
     
+    print(start_time,end_time)
     # convert datetime to unix timestamp
     start_time = str(int(start_time.timestamp()) * 1000)
     end_time = str(int(end_time.timestamp()) * 1000)
@@ -377,7 +380,6 @@ def main():
     subtract_meters = ['Κλιματισμός Κινητής','Υπόλοιπα Καταστήματος','Υπόλοιπα Φορτία Γραφείων']
     # iterate over meters
     for virtualName,submeters in virtualMeters.items():
-        print(virtualName)
         if virtualName in subtract_meters:
             operation=0 # sub
         else:

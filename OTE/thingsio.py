@@ -10,9 +10,9 @@ from dateutil.relativedelta import relativedelta
 
 
 def get_access_token(address):
-    r = requests.post(address + "/api/auth/login",
-                      json={'username': 'tenant@thingsboard.org', 'password': 'tenant'}).json()
 
+    r = requests.post(address + "/api/auth/login",
+                      json={'username': 'meazon-scripts@meazon.com', 'password': 'scr1pt!'}).json()
     # acc_token is the token to be used in the next request
     acc_token = 'Bearer' + ' ' + r['token']
     return acc_token
@@ -41,10 +41,10 @@ def get_devtoken(address, device):
     Retrieves the device token for the given device name.
     """
     acc_token = get_access_token(address)
+    devid = get_devid(address, device)
 
     response = requests.get(
-        url=f"{address}/api/tenant/devices",
-        params={"deviceName": device},
+        url=f"{address}/api/device/{devid}/credentials",
         headers={
             'Content-Type': 'application/json',
             'Accept': '*/*',
