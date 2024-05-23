@@ -23,13 +23,10 @@ def align_resample(df,interv):
     """
     Aligns and resamples the DataFrame to the specified interval.
     """
-   
     df['ts'] = df.index
     df['ts'] = df['ts'].dt.tz_localize('utc').dt.tz_convert('Europe/Athens')
-    # df['ts'] = df['ts'].dt.tz_localize('Europe/Athens')
     df.set_index('ts',inplace = True, drop = True)
     df = df.resample(interv).max()
-#     df = df.fillna(method="ffill")
 
     return df
 
@@ -99,10 +96,25 @@ def interp_edges(df, fillvalue, edge):
                     df['cnrg'+ph].iloc[i] = df['cnrg'+ph].iloc[i-1]+fillvalue[ph]
     return df
 
-def read_data(devid, acc_token, start_time, end_time, descriptors):
+
+def legacy_info(df, device, legadict):
+    tmp = df.copy()
+    tmp = tmp.round()
+    for col in tmp.columns:
+        tmp['diff_'+col] = tmp[col]-tmp[col].shift()
+    tmp = tmp.iloc[-1]
+    mydict = tmp.to_dict()
+    legadict[device] = mydict
+    
+    return legadict
+
+
+def read_data(device, acc_token, start_time, end_time, descriptors, legadict):
     """
     Reads data from the API and returns a DataFrame.
     """
+    devid = thingsio.get_devid(ADDRESS, device)
+
     # Create date range
     start_dt = pd.to_datetime(start_time, unit='ms')
     end_dt = pd.to_datetime(end_time, unit='ms')
@@ -164,6 +176,7 @@ def read_data(devid, acc_token, start_time, end_time, descriptors):
         # rename columns and resample daily
         df.rename(columns={'cnrgA':'clean_nrgA','cnrgB':'clean_nrgB','cnrgC':'clean_nrgC'}, inplace=True)
         df = df.resample('1D').max()
+        legadict = legacy_info(df, device, legadict)
         # print('cleaned df daily:\n', df)
     else:
         print('empty df! must retrieve estimated value')
@@ -246,36 +259,19 @@ def send_data(mydf, device):
      
 
 def main():
-   
-    physical_meters = ['102.216.000649',
-                       '102.216.000651', 
-                       '102.216.000652', 
-                       '102.301.000850', 
-                       '102.301.000865',
-                       '102.301.000867', 
-                       '102.301.000868', 
-                       '102.301.000869', 
-                       '102.301.000870',
-                       '102.301.000896', 
-                       '102.301.000916', 
-                       '102.301.000921', 
-                       '102.301.000923', 
-                       '102.301.000935', 
-                       '102.301.000963', 
-                       '102.301.000968', 
-                       '102.301.000969', 
-                       '102.301.000970', 
-                       '102.301.000976', 
-                       '102.301.000978', 
-                       '102.301.001102',
-                       '102.301.001108', 
-                       '102.301.001128', 
-                       '102.402.000028', 
-                       '102.402.000031', 
-                       '102.402.000035', 
-                       '102.402.000037', 
-                       '102.402.000039']
     
+    # load meter info
+    filename = 'meters_info.json'
+    with open(filename, 'r', encoding='utf-8') as file:
+        loaded_data = json.load(file)
+
+    # Access the loaded data
+    physical_meters = loaded_data["physical_meters"] # physical meters
+    virtualMeters = loaded_data["virtualMeters"] # virtual meters aggregations with physical meters
+    subtract_meters = loaded_data["subtract_meters"] # meters that need subtracting in aggregation
+    unwriteable = loaded_data["unwriteable"] # intermediate virtual meters, no need to write data 
+    
+    legadict = {} # legacy dictionary
     cleaned = {}
 
     # define descriptors and access token
@@ -286,7 +282,7 @@ def main():
     end_time = datetime.datetime.now(pytz.timezone('Europe/Athens'))
     end_time = end_time - datetime.timedelta(hours=end_time.hour, minutes=end_time.minute, seconds=end_time.second,
                                                     microseconds=end_time.microsecond)
-    start_time = end_time +relativedelta(days=-5)
+    start_time = end_time +relativedelta(days=-2)
     
     print(start_time,end_time)
     # convert datetime to unix timestamp
@@ -296,88 +292,14 @@ def main():
     # iterate over physical meters to clean energy values
     for meter in physical_meters:
         devid = thingsio.get_devid(ADDRESS, meter)
-        df = read_data(devid, acc_token, start_time, end_time,descriptors)
+        df = read_data(meter, acc_token, start_time, end_time,descriptors, legadict)
         cleaned[meter] = df
+    filename = 'meters_info.json'
 
+    # Write the data to the file
+    with open('legacy_info.json', 'w', encoding='utf-8') as file:
+        json.dump(legadict, file, ensure_ascii=False, indent=4)
 
-    # Basic virtual meters
-    virtualMeters = {'Απαραίτητα':
-                                ['102.216.000652', # M06
-                                 '102.216.000649'], # M07
-                    'Κλιματισμός Γραφείων': #V01
-                                ['102.301.000976',# M02
-                                 '102.301.000968',# M09
-                                 '102.301.000969'], # M10
-                    'Φωτισμός Γραφείων': # V02
-                                ['102.301.000963',# M03
-                                 '102.301.000869',# M04
-                                 '102.301.000870',# M05
-                                 '102.301.000850',# M11
-                                 '102.301.000865',# M12
-                                 '102.301.000868'],# M14
-                    'UPS Γραφείων': # V03
-                                ['102.402.000037',# M20
-                                 '102.402.000028'], # M21
-                    'Σύνολο Παρόχων': # V09
-                                ['102.402.000039',# Μ22
-                                 '102.301.000921'], # Μ18
-                    'Σύνολο Σταθερής': # V10
-                                ['102.301.000923',# Μ19
-                                 '102.301.000916',# Μ17
-                                 '102.301.000935',# Μ15
-                                 '102.301.000978'], # Μ16
-                    'Κλιματισμός Σταθερής': # V11
-                                ['102.301.000916',# Μ17
-                                 '102.301.000935',# Μ15
-                                 '102.301.000978'], # Μ16
-                    'Φωτισμός Καταστήματος':
-                                ['102.301.001108',# Φωτισμός - Πρίζες
-                                 '102.301.001128'], # Φωτισμός - Φώτα Νυκτός 
-                    'Κλιματισμός Κινητής': # V07
-                                ['102.402.000031', # M23
-                                 '102.402.000035'], # Μ24
-                    'Σύνολο Τεχνολογίας':
-                                ['Σύνολο Σταθερής',# V10
-                                 '102.402.000031'],#  23
-                    'Υποσύνολο γραφείων': # (M2+M9+M10)+(M3+M4+M5+M11+M12+M14)+(M20+M21)+M01+M13
-                                ['102.301.000870',# Fwtismos pinaka - M05
-                                '102.301.000963',# Mparokivotia fwtismos - M03
-                                '102.301.000850',# Fwtismos isogeio - M11
-                                '102.301.000869',# Fwtismos 5ou - M04
-                                '102.301.000868',# Fwtismos 3ou - M14
-                                '102.301.000865',# Fwtismos 1ou - M12
-                                '102.301.000970',# Fortia kinisis grafeiwn 3os - M01
-                                '102.301.000867',# Fortia kinisis 1os - M13
-                                '102.301.000969',#Klimatismos 5ou - M10
-                                '102.301.000976',#Klimatismos 3ou - M02
-                                '102.301.000968',#Klimatismos 1ou - M09
-                                '102.402.000037', #UPS 2 - M20
-                                '102.402.000028'], # UPS 1 - M21
-                    'Υποσύνολο κιν-σταθ-κατ': # M23+(M22+M18)+(M19+M15+M16+M17)+SYNOLO COSMOTE SHOP
-                                ['102.402.000039','102.301.000921', # V09 
-                                '102.301.000923','102.301.000916','102.301.000935','102.301.000978', # V10 
-                                '102.402.000031', # M23 
-                                '102.301.000896'] ,# cosmote shop
-                    'Υποσύνολο για υπόλοιπα': # intermediate addition
-                                ['Υποσύνολο γραφείων',
-                                'Υποσύνολο κιν-σταθ-κατ'],
-                    'Υπόλοιπα Φορτία Γραφείων': # V05
-                                ['102.216.000651', # M08
-                                'Υποσύνολο για υπόλοιπα'],
-                    'Φωτισμός-Κλιματισμός': # Φωτισμός καταστήματος + Κλιματισμός
-                                ['102.301.001108', # Φωτισμός - Πρίζες 
-                                '102.301.001128', # Φωτισμός - Φώτα Νυκτός 
-                                '102.301.001102'], # Κλιματισμός καταστήματος
-                    'Υπόλοιπα Καταστήματος': # Cosmote shop - Φωτισμός-Κλιματισμός
-                                ['102.301.000896', # Cosmote shop
-                                'Φωτισμός-Κλιματισμός'],
-                    'Σύνολο Γραφείων':
-                                ['Υπόλοιπα Φορτία Γραφείων',
-                                'Υποσύνολο γραφείων']
-    }
-
-    # list of virtual meters that subtraction must be applied, not addition
-    subtract_meters = ['Κλιματισμός Κινητής','Υπόλοιπα Καταστήματος','Υπόλοιπα Φορτία Γραφείων']
     # iterate over meters
     for virtualName,submeters in virtualMeters.items():
         if virtualName in subtract_meters:
@@ -391,10 +313,9 @@ def main():
         # agg = postproc(agg, virtualName)
         #send_data(agg,virtualName, address)
         
-    nosendlist = ['Υποσύνολο γραφείων', 'Υποσύνολο κιν-σταθ-κατ', 'Υποσύνολο για υπόλοιπα', 'Φωτισμός-Κλιματισμός']    
     
     # Create list of meters (physical+virtual) whose telemetry will be stored in TB
-    lst = [value for value in list(cleaned.keys()) if value not in nosendlist]
+    lst = [value for value in list(cleaned.keys()) if value not in unwriteable]
     filtered = {key: cleaned[key] for key in lst if key in cleaned}
 
     for key,data in filtered.items():
