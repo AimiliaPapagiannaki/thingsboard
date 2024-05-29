@@ -1,0 +1,226 @@
+{
+    "102.216.000649": {
+        "clean_nrgA": 294949798.0,
+        "clean_nrgB": 251532076.0,
+        "clean_nrgC": 265505436.0,
+        "diff_clean_nrgA": 38277.0,
+        "diff_clean_nrgB": 30733.0,
+        "diff_clean_nrgC": 31214.0
+    },
+    "102.216.000651": {
+        "clean_nrgA": 2575748713.0,
+        "clean_nrgB": 2287330977.0,
+        "clean_nrgC": 2221411257.0,
+        "diff_clean_nrgA": 964385.0,
+        "diff_clean_nrgB": 858781.0,
+        "diff_clean_nrgC": 794395.0
+    },
+    "102.216.000652": {
+        "clean_nrgA": 1824147123.0,
+        "clean_nrgB": 1646628853.0,
+        "clean_nrgC": 1614957813.0,
+        "diff_clean_nrgA": 738378.0,
+        "diff_clean_nrgB": 660035.0,
+        "diff_clean_nrgC": 620989.0
+    },
+    "102.301.000850": {
+        "clean_nrgA": 42535842.0,
+        "clean_nrgB": 516211.0,
+        "clean_nrgC": 5012043.0,
+        "diff_clean_nrgA": 10198.0,
+        "diff_clean_nrgB": 84.0,
+        "diff_clean_nrgC": 1541.0
+    },
+    "102.301.000865": {
+        "clean_nrgA": 1972450.0,
+        "clean_nrgB": 12137656.0,
+        "clean_nrgC": 1435271.0,
+        "diff_clean_nrgA": 541.0,
+        "diff_clean_nrgB": 8626.0,
+        "diff_clean_nrgC": 628.0
+    },
+    "102.301.000867": {
+        "clean_nrgA": 42065659.0,
+        "clean_nrgB": 65655268.0,
+        "clean_nrgC": 33369660.0,
+        "diff_clean_nrgA": 17444.0,
+        "diff_clean_nrgB": 30374.0,
+        "diff_clean_nrgC": 13903.0
+    },
+    "102.301.000868": {
+        "clean_nrgA": 16947360.0,
+        "clean_nrgB": 22426950.0,
+        "clean_nrgC": 10931972.0,
+        "diff_clean_nrgA": 12476.0,
+        "diff_clean_nrgB": 10735.0,
+        "diff_clean_nrgC": 7557.0
+    },
+    "102.301.000869": {
+        "clean_nrgA": 13824600.0,
+        "clean_nrgB": 58291159.0,
+        "clean_nrgC": 41358049.0,
+        "diff_clean_nrgA": 6241.0,
+        "diff_clean_nrgB": 29329.0,
+        "diff_clean_nrgC": 19909.0
+    },
+    "102.301.000870": {
+        "clean_nrgA": 242691.0,
+        "clean_nrgB": 240253.0,
+        "clean_nrgC": 261918.0,
+        "diff_clean_nrgA": 187.0,
+        "diff_clean_nrgB": 208.0,
+        "diff_clean_nrgC": 172.0
+    },
+    "102.301.000896": {
+        "clean_nrgA": 37670421.0,
+        "clean_nrgB": 54322702.0,
+        "clean_nrgC": 39234976.0,
+        "diff_clean_nrgA": 20953.0,
+        "diff_clean_nrgB": 37830.0,
+        "diff_clean_nrgC": 24047.0
+    },
+    "102.301.000916": {
+        "clean_nrgA": 115260458.0,
+        "clean_nrgB": 77500402.0,
+        "clean_nrgC": 86553496.0,
+        "diff_clean_nrgA": 64016.0,
+        "diff_clean_nrgB": 42304.0,
+        "diff_clean_nrgC": 50897.0
+    },
+    "102.301.000921": {
+        "clean_nrgA": 298581315.0,
+        "clean_nrgB": 282292028.0,
+        "clean_nrgC": 207737259.0,
+        "diff_clean_nrgA": 108333.0,
+        "diff_clean_nrgB": 97670.0,
+        "diff_clean_nrgC": 73174.0
+    },
+    "102.301.000923": {
+        "clean_nrgA": 305783799.0,
+        "clean_nrgB": 333512984.0,
+        "clean_nrgC": 353963718.0,
+        "diff_clean_nrgA": 107036.0,
+        "diff_clean_nrgB": 115407.0,
+        "diff_clean_nrgC": 119873.0
+    },
+    "102.301.000935": {
+        "clean_nrgA": 79867227.0,
+        "clean_nrgB": 55582943.0,
+        "clean_nrgC": 57328572.0,
+        "diff_clean_nrgA": 22982.0,
+        "diff_clean_nrgB": 12659.0,
+        "diff_clean_nrgC": 11146.0
+    },
+    "102.301.000963": {
+        "clean_nrgA": 22379221.0,
+        "clean_nrgB": 9020683.0,
+        "clean_nrgC": 9966952.0,
+        "diff_clean_nrgA": 6228.0,
+        "diff_clean_nrgB": 5286.0,
+        "diff_clean_nrgC": 2710.0
+    },
+    "102.301.000968": {
+        "clean_nrgA": 60276906.0,
+        "clean_nrgB": 54093168.0,
+        "clean_nrgC": 59731300.0,
+        "diff_clean_nrgA": 21457.0,
+        "diff_clean_nrgB": 18633.0,
+        "diff_clean_nrgC": 19394.0
+    },
+    "102.301.000969": {
+        "clean_nrgA": 73708248.0,
+        "clean_nrgB": 80272095.0,
+        "clean_nrgC": 94519837.0,
+        "diff_clean_nrgA": 23865.0,
+        "diff_clean_nrgB": 29361.0,
+        "diff_clean_nrgC": 32602.0
+    },
+    "102.301.000970": {
+        "clean_nrgA": 33773953.0,
+        "clean_nrgB": 31244596.0,
+        "clean_nrgC": 14897122.0,
+        "diff_clean_nrgA": 16369.0,
+        "diff_clean_nrgB": 16259.0,
+        "diff_clean_nrgC": 8520.0
+    },
+    "102.301.000976": {
+        "clean_nrgA": 87756326.0,
+        "clean_nrgB": 57491335.0,
+        "clean_nrgC": 60121157.0,
+        "diff_clean_nrgA": 24115.0,
+        "diff_clean_nrgB": 21852.0,
+        "diff_clean_nrgC": 22185.0
+    },
+    "102.301.000978": {
+        "clean_nrgA": 87705233.0,
+        "clean_nrgB": 82472569.0,
+        "clean_nrgC": 88401092.0,
+        "diff_clean_nrgA": 22873.0,
+        "diff_clean_nrgB": 22294.0,
+        "diff_clean_nrgC": 24563.0
+    },
+    "102.301.001102": {
+        "clean_nrgA": 8917360.0,
+        "clean_nrgB": 14320571.0,
+        "clean_nrgC": 14657039.0,
+        "diff_clean_nrgA": 2076.0,
+        "diff_clean_nrgB": 5037.0,
+        "diff_clean_nrgC": 6566.0
+    },
+    "102.301.001108": {
+        "clean_nrgA": 2945535.0,
+        "clean_nrgB": 3657524.0,
+        "clean_nrgC": 6485004.0,
+        "diff_clean_nrgA": 1482.0,
+        "diff_clean_nrgB": 1644.0,
+        "diff_clean_nrgC": 2956.0
+    },
+    "102.301.001128": {
+        "clean_nrgA": 9315375.0,
+        "clean_nrgB": 11513893.0,
+        "clean_nrgC": 5626367.0,
+        "diff_clean_nrgA": 4989.0,
+        "diff_clean_nrgB": 11561.0,
+        "diff_clean_nrgC": 3195.0
+    },
+    "102.402.000028": {
+        "clean_nrgA": 176059323.0,
+        "clean_nrgB": 169926395.0,
+        "clean_nrgC": 200688461.0,
+        "diff_clean_nrgA": 68376.0,
+        "diff_clean_nrgB": 65664.0,
+        "diff_clean_nrgC": 74414.0
+    },
+    "102.402.000031": {
+        "clean_nrgA": 75224432.0,
+        "clean_nrgB": 14524001.0,
+        "clean_nrgC": 72188210.0,
+        "diff_clean_nrgA": 26853.0,
+        "diff_clean_nrgB": 5046.0,
+        "diff_clean_nrgC": 27870.0
+    },
+    "102.402.000035": {
+        "clean_nrgA": 36288521.0,
+        "clean_nrgB": 14371267.0,
+        "clean_nrgC": 40514366.0,
+        "diff_clean_nrgA": 13229.0,
+        "diff_clean_nrgB": 5022.0,
+        "diff_clean_nrgC": 14245.0
+    },
+    "102.402.000037": {
+        "clean_nrgA": 166530133.0,
+        "clean_nrgB": 165133202.0,
+        "clean_nrgC": 194948880.0,
+        "diff_clean_nrgA": 64977.0,
+        "diff_clean_nrgB": 64203.0,
+        "diff_clean_nrgC": 72712.0
+    },
+    "102.402.000039": {
+        "clean_nrgA": 151404148.0,
+        "clean_nrgB": 148812293.0,
+        "clean_nrgC": 153336527.0,
+        "diff_clean_nrgA": 53817.0,
+        "diff_clean_nrgB": 53021.0,
+        "diff_clean_nrgC": 54162.0
+    }
+}

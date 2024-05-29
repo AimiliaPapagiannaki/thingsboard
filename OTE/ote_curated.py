@@ -14,7 +14,7 @@ import pytz
 import json
 from dateutil.relativedelta import relativedelta
 from dateutil.tz import gettz
-import thingsio
+import thingsAPI
 
 # ADDRESS = "http://localhost:8080"    
 ADDRESS = "https://mi3.meazon.com"
@@ -37,7 +37,7 @@ def handle_missing(df, tmp1):
     '''
     # interpolate middle nans
     [df, avgDiffs] = interp_missing(df)
-    # print('df and avgdiffs', df, avgDiffs)
+    #print('avgdiffs', avgDiffs)
 
     tmp1 = align_resample(tmp1,'1h')
     tmp1 = pd.concat([tmp1,df], axis=1)
@@ -113,8 +113,8 @@ def read_data(device, acc_token, start_time, end_time, descriptors, legadict):
     """
     Reads data from the API and returns a DataFrame.
     """
-    devid = thingsio.get_devid(ADDRESS, device)
-
+    devid = thingsAPI.get_devid(ADDRESS, device)
+    print(device)
     # Create date range
     start_dt = pd.to_datetime(start_time, unit='ms')
     end_dt = pd.to_datetime(end_time, unit='ms')
@@ -169,14 +169,15 @@ def read_data(device, acc_token, start_time, end_time, descriptors, legadict):
     if not df.empty:
         df = df.apply(pd.to_numeric, errors='coerce')
         df = align_resample(df, '1h')
-        # print('df before fillna:\n', df)
+        
         df = handle_missing(df, tmp1)
-        # print('df after fillna:\n', df)
+        
 
         # rename columns and resample daily
         df.rename(columns={'cnrgA':'clean_nrgA','cnrgB':'clean_nrgB','cnrgC':'clean_nrgC'}, inplace=True)
         df = df.resample('1D').max()
         legadict = legacy_info(df, device, legadict)
+        #df = df.tail(1)
         # print('cleaned df daily:\n', df)
     else:
         print('empty df! must retrieve estimated value')
@@ -222,17 +223,18 @@ def send_data(mydf, device):
     # convert to int
     for col in ['clean_nrgA','clean_nrgB','clean_nrgC']:
         df[col] = df[col].astype(np.int64)
-    #     # sanity check for negative nrg
-    #     print(df.loc[df[col]<df[col].shift()])
-    #     df.loc[df[col]<df[col].shift(), col]=np.nan
-
-
+         # sanity check for negative nrg
+        df.loc[df[col]<df[col].shift(), col]=df[col].shift()
+    
+    df = df.iloc[:-1] # remove current day's measurement until noon
+    df = df.tail(1) # write only energy of the previous day
+    
     df = df.dropna()
     if df.empty:
         return
     
     try:
-        print(device, df)
+        #print(device, df)
         # transform ts and write telemetry
         df['ts'] = df.index
         df['ts'] = df.apply(lambda row: int(row['ts'].timestamp()) * 1000, axis=1)
@@ -250,8 +252,8 @@ def send_data(mydf, device):
         # write to json and send telemetry to TB
         my_json = json.dumps(l)
         
-        # print(my_json)
-        #thingsio.send_telemetry(ADDRESS, device, my_json)
+        
+        thingsAPI.send_telemetry(ADDRESS, device, my_json)
         # print('Telemetry sent for device {}'.format(device))
 
     except Exception as e:
@@ -261,6 +263,8 @@ def send_data(mydf, device):
 def main():
     
     # load meter info
+    filepath = '/home/mcubeazon/Analytics/OTE/curatedVirtuals/'
+    os.chdir(filepath)
     filename = 'meters_info.json'
     with open(filename, 'r', encoding='utf-8') as file:
         loaded_data = json.load(file)
@@ -276,27 +280,46 @@ def main():
 
     # define descriptors and access token
     descriptors = 'cnrgA,cnrgB,cnrgC'
-    acc_token = thingsio.get_access_token(ADDRESS)
+    acc_token = thingsAPI.get_access_token(ADDRESS)
+    
+    
     
     #define start - end date
     end_time = datetime.datetime.now(pytz.timezone('Europe/Athens'))
     end_time = end_time - datetime.timedelta(hours=end_time.hour, minutes=end_time.minute, seconds=end_time.second,
                                                     microseconds=end_time.microsecond)
-    start_time = end_time +relativedelta(days=-2)
     
-    print(start_time,end_time)
+    start_time = end_time +relativedelta(days=-5)
+    end_time = end_time + datetime.timedelta(hours=13)
+    
     # convert datetime to unix timestamp
     start_time = str(int(start_time.timestamp()) * 1000)
     end_time = str(int(end_time.timestamp()) * 1000)
+    
+    #month = 12
+    #year = 2024
+    #startm = datetime.datetime(year = year, month=month, day=1)
+    #endm = startm + relativedelta(months=1)
+    #tmzn = pytz.timezone('Europe/Athens')    
+    #endm = tmzn.localize(endm)
+    #startm = tmzn.localize(startm)
+    #end_time = str(int((endm ).timestamp() * 1000))
+    #start_time = str(int((startm ).timestamp() * 1000))
+    #start_time = '1714510800000' 
+    #end_time = '1716843600000'
+    
 
+    print(start_time,end_time)
+    
     # iterate over physical meters to clean energy values
     for meter in physical_meters:
-        devid = thingsio.get_devid(ADDRESS, meter)
+        devid = thingsAPI.get_devid(ADDRESS, meter)
         df = read_data(meter, acc_token, start_time, end_time,descriptors, legadict)
         cleaned[meter] = df
-    filename = 'meters_info.json'
+    
 
     # Write the data to the file
+    filename = 'meters_info.json'
     with open('legacy_info.json', 'w', encoding='utf-8') as file:
         json.dump(legadict, file, ensure_ascii=False, indent=4)
 
