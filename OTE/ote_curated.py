@@ -224,7 +224,8 @@ def send_data(mydf, device):
     for col in ['clean_nrgA','clean_nrgB','clean_nrgC']:
         df[col] = df[col].astype(np.int64)
          # sanity check for negative nrg
-        df.loc[df[col]<df[col].shift(), col]=df[col].shift()
+        while not df.loc[df[col]<df[col].shift()].empty: 
+            df.loc[df[col]<df[col].shift(), col]=df[col].shift()
     
     df = df.iloc[:-1] # remove current day's measurement until noon
     df = df.tail(1) # write only energy of the previous day
@@ -297,7 +298,8 @@ def main():
     end_time = str(int(end_time.timestamp()) * 1000)
     
     #month = 12
-    #year = 2024
+    #year = 202
+    #for month in [12]:
     #startm = datetime.datetime(year = year, month=month, day=1)
     #endm = startm + relativedelta(months=1)
     #tmzn = pytz.timezone('Europe/Athens')    
@@ -306,7 +308,7 @@ def main():
     #end_time = str(int((endm ).timestamp() * 1000))
     #start_time = str(int((startm ).timestamp() * 1000))
     #start_time = '1714510800000' 
-    #end_time = '1716843600000'
+    #end_time = '1717016400000'
     
 
     print(start_time,end_time)
