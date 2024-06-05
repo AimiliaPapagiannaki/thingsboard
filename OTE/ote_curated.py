@@ -16,8 +16,8 @@ from dateutil.relativedelta import relativedelta
 from dateutil.tz import gettz
 import thingsAPI
 
-# ADDRESS = "http://localhost:8080"    
-ADDRESS = "https://mi3.meazon.com"
+ADDRESS = "http://localhost:8080"    
+#ADDRESS = "https://mi3.meazon.com"
 
 def align_resample(df,interv):
     """
@@ -175,7 +175,7 @@ def read_data(device, acc_token, start_time, end_time, descriptors, legadict):
 
         # rename columns and resample daily
         df.rename(columns={'cnrgA':'clean_nrgA','cnrgB':'clean_nrgB','cnrgC':'clean_nrgC'}, inplace=True)
-        df = df.resample('1D').max()
+        df = df.resample('1D', label='right').max()
         legadict = legacy_info(df, device, legadict)
         #df = df.tail(1)
         # print('cleaned df daily:\n', df)
@@ -226,16 +226,17 @@ def send_data(mydf, device):
          # sanity check for negative nrg
         while not df.loc[df[col]<df[col].shift()].empty: 
             df.loc[df[col]<df[col].shift(), col]=df[col].shift()
-    
+    df = df.iloc[1:]
     df = df.iloc[:-1] # remove current day's measurement until noon
     df = df.tail(1) # write only energy of the previous day
+    
     
     df = df.dropna()
     if df.empty:
         return
     
     try:
-        #print(device, df)
+        print(device, df)
         # transform ts and write telemetry
         df['ts'] = df.index
         df['ts'] = df.apply(lambda row: int(row['ts'].timestamp()) * 1000, axis=1)
@@ -291,24 +292,25 @@ def main():
                                                     microseconds=end_time.microsecond)
     
     start_time = end_time +relativedelta(days=-5)
+    start_time = start_time + datetime.timedelta(hours=13)
     end_time = end_time + datetime.timedelta(hours=13)
     
     # convert datetime to unix timestamp
     start_time = str(int(start_time.timestamp()) * 1000)
     end_time = str(int(end_time.timestamp()) * 1000)
     
-    #month = 12
-    #year = 202
-    #for month in [12]:
-    #startm = datetime.datetime(year = year, month=month, day=1)
-    #endm = startm + relativedelta(months=1)
-    #tmzn = pytz.timezone('Europe/Athens')    
-    #endm = tmzn.localize(endm)
-    #startm = tmzn.localize(startm)
-    #end_time = str(int((endm ).timestamp() * 1000))
-    #start_time = str(int((startm ).timestamp() * 1000))
-    #start_time = '1714510800000' 
-    #end_time = '1717016400000'
+    #month = 1
+    #year = 2022
+    #for month in [1]:
+    #    startm = datetime.datetime(year = year, month=month, day=1)
+    #    endm = startm + relativedelta(months=1)
+    #    tmzn = pytz.timezone('Europe/Athens')    
+    #    endm = tmzn.localize(endm)
+    #    startm = tmzn.localize(startm)
+    #    end_time = str(int((endm ).timestamp() * 1000))
+    #    start_time = str(int((startm ).timestamp() * 1000))
+    #start_time = '1691661600000' 
+    #end_time = '1704884400000'
     
 
     print(start_time,end_time)
