@@ -121,13 +121,14 @@ def read_data(acc_token, devid, address, start_time, end_time, descriptors):
 
 
 def countAlarms(alarms):
-   #print('DIPS:',alarms.loc[(alarms['alarm_id']>=2) & (alarms['alarm_id']<=4)]) 
-   ndips = alarms.loc[(alarms['alarm_id']>=2) & (alarms['alarm_id']<=4),'alarm_id'].count()
-  
-   nswells = alarms.loc[(alarms['alarm_id']>=5) & (alarms['alarm_id']<=7),'alarm_id'].count()
+   
+   
+   ndips = alarms.loc[(alarms['alarm_id']>=2) & (alarms['alarm_id']<=4) & (alarms['alarm_duration']>0),'alarm_id'].count()
+   print('NDIPS:',ndips)
+   nswells = alarms.loc[(alarms['alarm_id']>=5) & (alarms['alarm_id']<=7)  & (alarms['alarm_duration']>0),'alarm_id'].count()
     
-   nfreqover = alarms.loc[(alarms['alarm_id']>=14) & (alarms['alarm_id']<=16),'alarm_id'].count()
-   nfrequnder = alarms.loc[(alarms['alarm_id']>=17) & (alarms['alarm_id']<=19),'alarm_id'].count()
+   nfreqover = alarms.loc[(alarms['alarm_id']>=14) & (alarms['alarm_id']<=16) & (alarms['alarm_duration']>0),'alarm_id'].count()
+   nfrequnder = alarms.loc[(alarms['alarm_id']>=17) & (alarms['alarm_id']<=19)  & (alarms['alarm_duration']>0),'alarm_id'].count()
     
    
    return ndips,nswells,nfreqover,nfrequnder
@@ -189,7 +190,7 @@ def main(device, start_time, end_time, assetname,devid, acc_token, label,kpis,is
 #def main(argv):
 
     interval = 1 # interval in minutes
-    descriptors = 'vltA,vltB,vltC,curA,curB,curC,cnrgA,cnrgB,cnrgC'
+    descriptors = 'vltA,vltB,vltC,frqA,frqB,frqC,vthdA,vthdB,vthdC,ithdA,ithdB,ithdC'
     address = 'http://localhost:8080'
 
     
@@ -223,11 +224,12 @@ def main(device, start_time, end_time, assetname,devid, acc_token, label,kpis,is
         #make a copy for power fail check later
         pfail = df[['vltA','vltB','vltC']].copy()
 
-        df = df.reset_index()
+        
 
     
         df['totalVlt'] = (df['vltA']+df['vltB']+df['vltC'])/3
         df['totalVthd'] = (df['vthdA']+df['vthdB']+df['vthdC'])/3
+        df['totalIthd'] = (df['ithdA']+df['ithdB']+df['ithdC'])/3
         df['deviation'] = ((df['totalVlt']-230)/230)*100
 
         df['difA'] = np.abs(df['vltA']-df['totalVlt'])
@@ -239,7 +241,7 @@ def main(device, start_time, end_time, assetname,devid, acc_token, label,kpis,is
             dfreq = df[['frqA','frqB','frqC']].copy()
             
             # plot min max frequencies
-            df = df.drop(['frqA','frqB','frqC','frminA','frminB','frminC','frmaxA','frmaxB','frmaxC'],axis=1)
+            df = df.drop(['frqA','frqB','frqC'],axis=1)
             dfreq['efrq'] = (dfreq['frqA']+dfreq['frqB']+dfreq['frqC'])/3
             dfreq['frqdev'] = ((dfreq['efrq']-50)/50)*100
             
@@ -256,18 +258,36 @@ def main(device, start_time, end_time, assetname,devid, acc_token, label,kpis,is
         dev100neg = np.round(df['deviation'].min(),3) if df['deviation'].min()<0 else 0
 
         vimb95 = np.round(df['imbalance'].quantile(.95),3)
+        
         vthd95 = np.round(df['totalVthd'].quantile(.95),3)
-
+        vthd100 = np.round(df['totalVthd'].max(),3)
+        
+        ithd100 = np.round(df['totalIthd'].max(),3)
+    
         if frqflag==1:
             frqdev995 = np.round(dfreq['frqdev'].quantile(0.995),3)
             frqdev100pos = np.round(dfreq['frqdev'].max(),3)
             frqdev100neg = np.round(dfreq['frqdev'].min(),3) if dfreq['frqdev'].min()<0 else 0
 
-    kpis['Max voltage deviation (95% of 10min intervals)'] = dev95
-    kpis['Max positive voltage deviation (100% of 10min intervals)'] = dev100pos
-    kpis['Max negative voltage deviation (100% of 10min intervals)'] = dev100neg
-    kpis['Max voltage imbalance (95% of 10min intervals)'] = vimb95
-    kpis['Max voltage THD (95% of 10min intervals)'] = vthd95
+        kpis['Max voltage deviation (95% of 10min intervals)'] = dev95
+        kpis['Max positive voltage deviation (100% of 10min intervals)'] = dev100pos
+        kpis['Max negative voltage deviation (100% of 10min intervals)'] = dev100neg
+        kpis['Max voltage imbalance (95% of 10min intervals)'] = vimb95
+        kpis['Max voltage THD (95% of 10min intervals)'] = vthd95
+        kpis['Max voltage THD (100% of 10min intervals)'] = vthd100
+        kpis['Max current THD (100% of 10min intervals)'] = ithd100
+        
+    else:
+        kpis['Max voltage deviation (95% of 10min intervals)'] = '-'
+        kpis['Max positive voltage deviation (100% of 10min intervals)'] = '-'
+        kpis['Max negative voltage deviation (100% of 10min intervals)'] = '-'
+        kpis['Max voltage imbalance (95% of 10min intervals)'] = '-'
+        kpis['Max voltage THD (95% of 10min intervals)'] = '-'
+        kpis['Max voltage THD (100% of 10min intervals)'] = '-' 
+        kpis['Max current THD (100% of 10min intervals)'] = '-'
+        
+        frqflag=0
+    
     if frqflag==1:
         kpis['Max frequency deviation (99.5% of 10min intervals)'] = frqdev995
         kpis['Max positive frequency deviation (100% of 10min intervals)'] = frqdev100pos
@@ -294,7 +314,7 @@ def main(device, start_time, end_time, assetname,devid, acc_token, label,kpis,is
         
         
         # number of dips/swells        
-        alarms = alarms.drop('alarm_status', axis=1)
+        #alarms = alarms.drop('alarm_status', axis=1)
         alarms = alarms[(alarms['alarm_id']>1) & (alarms['alarm_id']<8)]
 
         [ndips,nswells,nfreqover,nfrequnder] = countAlarms(alarms)
@@ -302,6 +322,8 @@ def main(device, start_time, end_time, assetname,devid, acc_token, label,kpis,is
         nr_fails = 0
         ndips = 0
         nswells = 0
+        nfreqover = 0
+        nfrequnder = 0
 
     
     kpis['Nr. of Power Fails (outage)'] = nr_fails
