@@ -24,12 +24,13 @@ from email.mime.base import MIMEBase
 from email import encoders
 
 
-def send_email(email_recipient, email_subject, email_message, attachment_names):
-    email_sender = 'a.papagiannaki@meazon.com'
-
+def send_email(email_recipient, email_cc, email_bcc, email_subject, email_message, attachment_names):
+    email_sender = 'support@meazon.com'
+    rcpt = email_recipient+email_cc+email_bcc
     msg = MIMEMultipart()
     msg['From'] = email_sender
     msg['To'] = ", ".join(email_recipient)
+    msg['Cc'] = ", ".join(email_cc)
     msg['Subject'] = email_subject
 
     msg.attach(MIMEText(email_message, 'plain'))
@@ -43,17 +44,17 @@ def send_email(email_recipient, email_subject, email_message, attachment_names):
         part.add_header('Content-Disposition', "attachment; filename= %s" % filename)
         msg.attach(part)
         
-    try:
-        server = smtplib.SMTP('smtp-mail.outlook.com', 587)
-        server.ehlo()
-        server.starttls()
-        server.login('a.papagiannaki@meazon.com', '2817emily!')
-        text = msg.as_string()
-        server.sendmail(email_sender, email_recipient, text)
-        print('email sent')
-        server.quit()
-    except:
-        print("SMPT server connection error")
+    #try:
+    server = smtplib.SMTP('smtp-mail.outlook.com', 587)
+    server.ehlo()
+    server.starttls()
+    server.login('support@meazon.com', 'sup4m3aZ0n!')
+    text = msg.as_string()
+    server.sendmail(email_sender, rcpt, text)
+    print('email sent')
+    server.quit()
+    #except:
+        #print("SMPT server connection error")
     return True
 
 
@@ -79,11 +80,9 @@ def custom_agg(group):
     kVA_desc.columns = [f'kVA_{col}' for col in kVA_desc.columns]
     
     max_events = group['Number of events'].max()
-    max_time = group['% of time'].max()
     
     result = pd.DataFrame({
         'Number of events': [max_events],
-        '% of time': [max_time],
         'Comments': [generate_comments(group)]
     }, index=kVA_desc.index)
     combined_result = pd.concat([kVA_desc, result], axis=1)
@@ -158,7 +157,7 @@ def merge_transf(final_df, writer):
 
 
 def process_info(df,phasedict,day,month,year,monthdayfig):
-
+    df = df.drop('% of time', axis=1)
     # Filter transformers first
     # Calculate sum of events per transformer
     sum_events = df.groupby('Transformer')['Number of events'].sum()
@@ -180,7 +179,7 @@ def process_info(df,phasedict,day,month,year,monthdayfig):
     
     # Combine all results into a single DataFrame
     final_df = pd.concat(all_results).reset_index(drop=True)
-    final_df.loc[final_df['Number of events']==0,['kVA_min','kVA_mean','kVA_max','kVA_count','% of time','Comments']]=''
+    final_df.loc[final_df['Number of events']==0,['kVA_min','kVA_mean','kVA_max','kVA_count','Comments']]=''
     
     
     # Reorder columns to have 'Transformer' and 'phase' as the first columns
@@ -237,6 +236,7 @@ def main():
     mainpath = '/home/azureuser/HEDNOKPIs/daily_OVP/'
     #os.chdir(mainpath)
     end_time = datetime.datetime.now(pytz.timezone('Europe/Athens'))
+    
     end_time = end_time - datetime.timedelta(hours=end_time.hour, minutes=end_time.minute, seconds=end_time.second,
                                                  microseconds=end_time.microsecond)
     
@@ -305,7 +305,7 @@ def main():
                     
                     alltransf.append(label)
                 
-                    #get_ovp.main(device, start_time, end_time, assetname,devid, acc_token, label, mainpath)
+                    get_ovp.main(device, start_time, end_time, assetname,devid, acc_token, label, mainpath)
     set1 = set(alltransf)
     
     
@@ -361,8 +361,10 @@ def main():
             sbj =  'Ημερήσια επισκόπηση συμβάντων υπέρβασης ισχύος των Μ/Σ'
             msg = 'Συνημμένα θα βρείτε το γράφημα και τις συνοπτικές πληροφορίες σχετικά με τα περιστατικά overpower των Μ/Σ την προηγούμενη ημέρα. \n\n Powered by Meazon'
             
-            recipients = ['a.papagiannaki@meazon.com','k.agavanakis@meazon.com']
-            #send_email(recipients,sbj,msg,[figname,dataname])
+            recipients = ['s.christoforos@deddie.gr','g.siapalidis@deddie.gr']
+            cc_recipients = ['chr.paraskevas@deddie.gr','g.andreakos@deddie.gr']
+            bcc_recipients = ['a.papagiannaki@meazon.com','k.agavanakis@meazon.com','s.koutroubinas@meazon.com']
+            send_email(recipients, cc_recipients,bcc_recipients,sbj,msg,[figname,dataname])
             ##
 
 if __name__ == '__main__':
