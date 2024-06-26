@@ -16,6 +16,7 @@ from pandas import ExcelWriter
 from openpyxl.utils import get_column_letter
 from openpyxl import load_workbook, Workbook
 from openpyxl.styles import Font
+from openpyxl.utils.dataframe import dataframe_to_rows
 import smtplib
 from email.message import EmailMessage
 from email.mime.text import MIMEText
@@ -23,6 +24,7 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.base import MIMEBase
 from email import encoders
 
+REPORTPATH = '/home/azureuser/HEDNOKPIs/daily_OVP/reports/'
 
 def send_email(email_recipient, email_cc, email_bcc, email_subject, email_message, attachment_names):
     email_sender = 'support@meazon.com'
@@ -91,7 +93,48 @@ def custom_agg(group):
     #return pd.concat([kVA_desc, result], axis=1)
     return combined_result
 
-def merge_transf(final_df, writer):
+
+
+
+def read_excel_files(file_path):
+    # Load the workbook and sheet
+    workbook = load_workbook(file_path)
+    sheet = workbook.active
+    
+    # Read the data into a pandas dataframe
+    df = pd.read_excel(file_path, engine='openpyxl')
+    
+    return df
+
+
+def merge_old_xls(filename):
+    new_filename = 'Historical_'+filename
+    # Read the first and second Excel files with styles
+    df1 = read_excel_files(REPORTPATH+filename)
+    df2 = read_excel_files(REPORTPATH+'lastfile.xlsx')
+    
+   
+    # Concatenate the dataframes with an empty row in between
+    df_combined = pd.concat([df1, df2], ignore_index=True)
+    df_combined = df_combined.dropna(how='all')
+    
+    
+    writer = ExcelWriter(REPORTPATH+new_filename, engine='openpyxl')
+    df_combined.to_excel(writer, index=False, sheet_name='Sheet1')
+    merge_transf(df_combined, writer,1)
+    
+    os.remove(REPORTPATH+'lastfile.xlsx')
+    # create a copy of today's excel file
+    wb = load_workbook(REPORTPATH+new_filename)
+    # Save it with a new name
+    wb.save(REPORTPATH+'lastfile.xlsx')
+    
+    return REPORTPATH+new_filename
+
+
+
+
+def merge_transf(final_df, writer,mergeCells):
 
     # Get the workbook and active sheet
     wb = writer.book
@@ -100,14 +143,14 @@ def merge_transf(final_df, writer):
     # Define bold font style
     bold_font = Font(bold=True)
 
-    
-    # Find the columns for merging
-    transformer_col_idx = final_df.columns.get_loc('Transformer') + 1
-    
-    # Apply bold font to 'Transformer' column
-    for row in ws.iter_rows(min_row=2, max_row=len(final_df)+1, min_col=transformer_col_idx, max_col=transformer_col_idx):
-        for cell in row:
-            cell.font = bold_font
+    if mergeCells==1:
+        # Find the columns for merging
+        transformer_col_idx = final_df.columns.get_loc('Transformer') + 1
+        
+        # Apply bold font to 'Transformer' column
+        for row in ws.iter_rows(min_row=2, max_row=len(final_df)+1, min_col=transformer_col_idx, max_col=transformer_col_idx):
+            for cell in row:
+                cell.font = bold_font
     
     
     phase_col_idx = final_df.columns.get_loc('phase') + 1
@@ -119,30 +162,32 @@ def merge_transf(final_df, writer):
     current_transformer = None
     start_row = None
     
-    for i, row in final_df.iterrows():
-        row_num = current_row  # Current row in the Excel sheet
-        transformer = row['Transformer']
+    if mergeCells==1:
+        for i, row in final_df.iterrows():
+            row_num = current_row  # Current row in the Excel sheet
+            transformer = row['Transformer']
+            
+            if transformer != current_transformer:
+                if current_transformer is not None:
+                    # Insert a blank row after each transformer (triplet of phases)
+                    ws.insert_rows(current_row)
+                    current_row += 1  # Move to the next row before merging
+                    
+                # Update current transformer and start row
+                current_transformer = transformer
+                start_row = current_row
+            
+            # Write the row to Excel
+            for col_num, value in enumerate(row):
+                ws.cell(row=current_row, column=col_num+1, value=value)
+            
+            current_row += 1
         
-        if transformer != current_transformer:
-            if current_transformer is not None:
-                # Insert a blank row after each transformer (triplet of phases)
-                ws.insert_rows(current_row)
-                current_row += 1  # Move to the next row before merging
-                
-            # Update current transformer and start row
-            current_transformer = transformer
-            start_row = current_row
         
-        # Write the row to Excel
-        for col_num, value in enumerate(row):
-            ws.cell(row=current_row, column=col_num+1, value=value)
-        
-        current_row += 1
-    
-        # Merge cells for the current transformer and comments every triplet
-        if (i + 1) % 3 == 0:
-            ws.merge_cells(start_row=start_row, start_column=transformer_col_idx, end_row=current_row-1, end_column=transformer_col_idx)
-            start_row = current_row  # Update start_row for the next triplet
+            # Merge cells for the current transformer and comments every triplet
+            if (i + 1) % 3 == 0:
+                ws.merge_cells(start_row=start_row, start_column=transformer_col_idx, end_row=current_row-1, end_column=transformer_col_idx)
+                start_row = current_row  # Update start_row for the next triplet
     
 
     
@@ -156,7 +201,8 @@ def merge_transf(final_df, writer):
 
 
 
-def process_info(df,phasedict,day,month,year,monthdayfig):
+def process_info(df,phasedict,day,month,year):
+    
     df = df.drop('% of time', axis=1)
     # Filter transformers first
     # Calculate sum of events per transformer
@@ -180,6 +226,7 @@ def process_info(df,phasedict,day,month,year,monthdayfig):
     # Combine all results into a single DataFrame
     final_df = pd.concat(all_results).reset_index(drop=True)
     final_df.loc[final_df['Number of events']==0,['kVA_min','kVA_mean','kVA_max','kVA_count','Comments']]=''
+    final_df['Date'] = year+'-'+month+'-'+day
     
     
     # Reorder columns to have 'Transformer' and 'phase' as the first columns
@@ -188,14 +235,13 @@ def process_info(df,phasedict,day,month,year,monthdayfig):
     final_df.rename(columns={'kVA_min':'Minimum overpower %','kVA_mean':'Average overpower %','kVA_max':'Maximum overpower %','kVA_count':'Total minutes'},inplace=True)
     # Write to Excel
     filename = 'Overpower_analysis_'+str(year)+'_'+str(month)+'_'+str(day)+'.xlsx'
-    writer = ExcelWriter(monthdayfig+filename, engine='openpyxl')
+    writer = ExcelWriter(REPORTPATH+filename, engine='openpyxl')
     final_df.to_excel(writer, index=False, sheet_name='Sheet1')
-
     
-    merge_transf(final_df,writer)
     
-    dataname = monthdayfig+filename
-    return dataname
+    merge_transf(final_df,writer,0)
+    
+    return filename
   
             
 def ultimatefig(df, day, month, year,monthdayfig,phasedict):
@@ -253,11 +299,11 @@ def main():
     end_time = str(int(end_time.timestamp()) * 1000)
     print(start_time,end_time)
     
-    #day = '13'
+    #day = '22'
     #month = '06'
     #year = '2024'
-    #start_time = '1718226000000'
-    #end_time = '1718289227000'
+    #start_time = '1719003600000'
+    #end_time = '1719090000000'
         
     
     monthdayfig = mainpath+'figures/'+month+'/'
@@ -326,25 +372,23 @@ def main():
             
             df = pd.concat([df, tmp])
         
-        if not df.empty:
-                        
+        if not df.empty:  
             set2 = set(list(df['Transformer'].unique()))
             missing_transf = list(set1.symmetric_difference(set2))
-            common_df = pd.DataFrame([t for t in missing_transf], columns=['Transformer'])
-            common_df['% of time'] = 0.0
-            common_df['kVA'] = 80#np.nan
-            common_df['Number of events'] = 0
-            df = pd.concat([df, common_df])
-            df['phase'] = ph
-            pwrdf = pd.concat([pwrdf,df])
+        else:
+            missing_transf = list(set1)
+        
+        common_df = pd.DataFrame([t for t in missing_transf], columns=['Transformer'])
+        common_df['% of time'] = 0.0
+        common_df['kVA'] = 80#np.nan
+        common_df['Number of events'] = 0
+        df = pd.concat([df, common_df])
+        df['phase'] = ph
+        pwrdf = pd.concat([pwrdf,df])
+        
             
-            #df['custom'] = pd.Categorical(df['Transformer'], categories=alltransf, ordered=True)
-            #df = df.sort_values('custom')
-            #df = df.drop('custom',axis=1)
-            #df = df.reset_index(drop=True)
             
-            #mydict[ph] = df
-            #multiplotfig(df, ph, phasedict, day, month, year,monthdayfig)
+            
     
     if not pwrdf.empty:
         pwrdf['customT'] = pd.Categorical(pwrdf['Transformer'], categories=alltransf, ordered=True)
@@ -355,7 +399,9 @@ def main():
         
         if pwrdf['Number of events'].sum()>0:
             figname = ultimatefig(pwrdf, day, month, year,monthdayfig,phasedict)         
-            dataname = process_info(pwrdf,phasedict,day,month,year,monthdayfig)   
+            filename = process_info(pwrdf,phasedict,day,month,year) 
+               
+            dataname = merge_old_xls(filename)
             
             ## send email to recipient
             sbj =  'Ημερήσια επισκόπηση συμβάντων υπέρβασης ισχύος των Μ/Σ'
@@ -364,7 +410,7 @@ def main():
             recipients = ['s.christoforos@deddie.gr','g.siapalidis@deddie.gr']
             cc_recipients = ['chr.paraskevas@deddie.gr','g.andreakos@deddie.gr']
             bcc_recipients = ['a.papagiannaki@meazon.com','k.agavanakis@meazon.com','s.koutroubinas@meazon.com']
-            send_email(recipients, cc_recipients,bcc_recipients,sbj,msg,[figname,dataname])
+            #send_email(recipients, cc_recipients,bcc_recipients,sbj,msg,[figname,dataname])
             ##
 
 if __name__ == '__main__':
