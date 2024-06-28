@@ -112,7 +112,7 @@ def merge_old_xls(filename):
     # Read the first and second Excel files with styles
     df1 = read_excel_files(REPORTPATH+filename)
     df2 = read_excel_files(REPORTPATH+'lastfile.xlsx')
-    
+    os.remove(REPORTPATH+'lastfile.xlsx')
    
     # Concatenate the dataframes with an empty row in between
     df_combined = pd.concat([df1, df2], ignore_index=True)
@@ -121,13 +121,18 @@ def merge_old_xls(filename):
     
     writer = ExcelWriter(REPORTPATH+new_filename, engine='openpyxl')
     df_combined.to_excel(writer, index=False, sheet_name='Sheet1')
+    # write to lastfile.xlsx
+    df_combined.to_excel(REPORTPATH+'lastfile.xlsx', index=False, sheet_name='Sheet1',engine='openpyxl')
+    
     merge_transf(df_combined, writer,1)
     
-    os.remove(REPORTPATH+'lastfile.xlsx')
+    
+    
+    #os.remove(REPORTPATH+'lastfile.xlsx')
     # create a copy of today's excel file
-    wb = load_workbook(REPORTPATH+new_filename)
+    #wb = load_workbook(REPORTPATH+new_filename)
     # Save it with a new name
-    wb.save(REPORTPATH+'lastfile.xlsx')
+    #wb.save(REPORTPATH+'lastfile.xlsx')
     
     return REPORTPATH+new_filename
 
@@ -160,14 +165,16 @@ def merge_transf(final_df, writer,mergeCells):
     current_row = 2
     # Iterate through the DataFrame to merge cells for each transformer
     current_transformer = None
+    current_date = None
     start_row = None
     
     if mergeCells==1:
         for i, row in final_df.iterrows():
             row_num = current_row  # Current row in the Excel sheet
             transformer = row['Transformer']
+            rowdate = row['Date']
             
-            if transformer != current_transformer:
+            if (transformer != current_transformer) or (rowdate != current_date):
                 if current_transformer is not None:
                     # Insert a blank row after each transformer (triplet of phases)
                     ws.insert_rows(current_row)
@@ -175,6 +182,7 @@ def merge_transf(final_df, writer,mergeCells):
                     
                 # Update current transformer and start row
                 current_transformer = transformer
+                current_date = rowdate
                 start_row = current_row
             
             # Write the row to Excel
@@ -299,11 +307,11 @@ def main():
     end_time = str(int(end_time.timestamp()) * 1000)
     print(start_time,end_time)
     
-    #day = '22'
+    #day = '25'
     #month = '06'
     #year = '2024'
-    #start_time = '1719003600000'
-    #end_time = '1719090000000'
+    #start_time = '1719262800000'
+    #end_time = '1719349200000'
         
     
     monthdayfig = mainpath+'figures/'+month+'/'
@@ -402,15 +410,18 @@ def main():
             filename = process_info(pwrdf,phasedict,day,month,year) 
                
             dataname = merge_old_xls(filename)
-            
+            #dataname = '/home/azureuser/HEDNOKPIs/daily_OVP/reports/Historical_Overpower_analysis_2024_06_27.xlsx'
             ## send email to recipient
             sbj =  'Ημερήσια επισκόπηση συμβάντων υπέρβασης ισχύος των Μ/Σ'
-            msg = 'Συνημμένα θα βρείτε το γράφημα και τις συνοπτικές πληροφορίες σχετικά με τα περιστατικά overpower των Μ/Σ την προηγούμενη ημέρα. \n\n Powered by Meazon'
+            msg = 'Συνημμένα θα βρείτε το γράφημα και τις συνοπτικές πληροφορίες σχετικά με τα περιστατικά overpower των Μ/Σ την προηγούμενη ημέρα, καθώς και όλα τα ιστορικά δεδομένα από τον Ιανουάριο μέχρι τώρα. \n\n Powered by Meazon'
             
             recipients = ['s.christoforos@deddie.gr','g.siapalidis@deddie.gr']
             cc_recipients = ['chr.paraskevas@deddie.gr','g.andreakos@deddie.gr']
             bcc_recipients = ['a.papagiannaki@meazon.com','k.agavanakis@meazon.com','s.koutroubinas@meazon.com']
-            #send_email(recipients, cc_recipients,bcc_recipients,sbj,msg,[figname,dataname])
+            #recipients = ['a.papagiannaki@meazon.com']
+            #cc_recipients = []
+            #bcc_recipients = []
+            send_email(recipients, cc_recipients,bcc_recipients,sbj,msg,[figname,dataname])
             ##
 
 if __name__ == '__main__':

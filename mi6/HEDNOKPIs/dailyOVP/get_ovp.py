@@ -151,7 +151,8 @@ def main(device, start_time, end_time, assetname,devid, acc_token, label, mainpa
     
     interval = 1 # interval in minutes
     descriptors = 'vltA,vltB,vltC,curA,curB,curC'
-    address = 'http://localhost:8080'
+    # address = 'http://localhost:8080'
+    address = 'https://mi6.meazon.com'
 
     
     nominal = get_attr(acc_token,devid,address)
