@@ -39,7 +39,7 @@ def handle_missing(df, tmp1):
     [df, avgDiffs] = interp_missing(df)
     #print('avgdiffs', avgDiffs)
 
-    tmp1 = align_resample(tmp1,'1h')
+    tmp1 = align_resample(tmp1,'1h','left')
     tmp1 = pd.concat([tmp1,df], axis=1)
     tmp1 = tmp1.sort_index()
     
@@ -116,8 +116,9 @@ def read_data(device, acc_token, start_time, end_time, descriptors, legadict, en
     devid = thingsAPI.get_devid(ADDRESS, device, entity)
     
     # Create date range
-    start_dt = pd.to_datetime(start_time, unit='ms')
-    end_dt = pd.to_datetime(end_time, unit='ms')
+    start_dt = pd.to_datetime(int(start_time), unit='ms')
+    end_dt = pd.to_datetime(int(end_time), unit='ms')
+    
 
     # Create a datetime index with a desired frequency (e.g., 'D' for daily)
     datetime_index = pd.date_range(start=start_dt, end=end_dt, freq='H')
@@ -232,9 +233,9 @@ def create_virtual(vrtl, cleaned, operation):
                 else:
                     return pd.DataFrame([])
         else:
-            df = cleaned[0]
-            totalAC = cleaned[1]
-            totalFreeze = cleaned[2]
+            df = cleaned[vrtl[0]]
+            totalAC = cleaned[vrtl[1]]
+            totalFreeze = cleaned[vrtl[2]]
             if (not df.empty) and (not totalAC.empty) and (not totalFreeze.empty):
                 agg = df.copy()
                 agg = agg.div(totalAC)
@@ -338,9 +339,9 @@ def main():
     start_time = str(int(start_time.timestamp()) * 1000)
     end_time = str(int(end_time.timestamp()) * 1000)
     
-    month = 5
+    month = 3
     year = 2024
-    for month in [5]:
+    for month in [3]:
         startm = datetime.datetime(year = year, month=month, day=1)
         endm = startm + relativedelta(months=1)
         tmzn = pytz.timezone('Europe/Athens')    
@@ -368,6 +369,7 @@ def main():
 
     # iterate over meters
     for virtualName,submeters in virtualMeters.items():
+        print(virtualName)
         if virtualName in subtract_meters:
             operation=0 # sub
         elif virtualName in complex_calc_meters:
@@ -376,6 +378,7 @@ def main():
             operation=1 #add
 
         agg = create_virtual(submeters, cleaned, operation)
+        print(agg.head())
         if not agg.empty:
             cleaned[virtualName] = agg
         # agg = postproc(agg, virtualName)
@@ -385,14 +388,15 @@ def main():
     # Create list of meters (physical+virtual) whose telemetry will be stored in TB
     lst = [value for value in list(cleaned.keys()) if value not in unwriteable]
     filtered = {key: cleaned[key] for key in lst if key in cleaned}
-
+    for key,value in cleaned.items():
+        print(key,value.head())
     for key,data in filtered.items():
         if key in assetdevs:
             entity = 'ASSET'
         else:
             entity = 'DEVICE'
-        if key=='Πλανητάριο':
-            send_data(data, key, entity)
+        #if key=='Πλανητάριο':
+        #    send_data(data, key, entity)
 
 
     # for key,value in cleaned.items():
