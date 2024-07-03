@@ -217,35 +217,35 @@ def create_virtual(vrtl, cleaned, operation):
     Creates a virtual DataFrame by aggregating data from multiple devices.
     """
     agg = pd.DataFrame([])
-    try:
-        if operation<2: # add or sub
-            for submeter in vrtl:
-                df = cleaned[submeter]
+    #try:
+    if operation<2: # add or sub
+        for submeter in vrtl:
+            df = cleaned[submeter]
 
-                if not df.empty:
-                    if not agg.empty:
-                        if operation == 1:
-                            agg = agg.add(df)
-                        else:
-                            agg = agg.sub(df)                        
+            if not df.empty:
+                if not agg.empty:
+                    if operation == 1:
+                        agg = agg.add(df)
                     else:
-                        agg = df
+                        agg = agg.sub(df)                        
                 else:
-                    return pd.DataFrame([])
-        else:
-            df = cleaned[vrtl[0]]
-            totalAC = cleaned[vrtl[1]]
-            totalFreeze = cleaned[vrtl[2]]
-            if (not df.empty) and (not totalAC.empty) and (not totalFreeze.empty):
-                agg = df.copy()
-                agg = agg.div(totalAC)
-                agg = agg.mul(totalFreeze)
+                    agg = df
             else:
                 return pd.DataFrame([])
+    else:
+        df = cleaned[vrtl[0]]
+        totalAC = cleaned[vrtl[1]]
+        totalFreeze = cleaned[vrtl[2]]
+        if (not df.empty) and (not totalAC.empty) and (not totalFreeze.empty):
+            agg = df.copy()
+            agg = agg.div(totalAC)
+            agg = agg.mul(totalFreeze)
+        else:
+            return pd.DataFrame([])
 
             
-    except Exception as e:
-        print(f"Unable to retrieve data for all virtuals: {e}")
+    #except Exception as e:
+    #    print(f"Unable to retrieve data for all virtuals: {e}")
         
     return agg.dropna()
 
@@ -265,7 +265,7 @@ def send_data(mydf, device, entity):
         while not df.loc[df[col]<df[col].shift()].empty: 
             df.loc[df[col]<df[col].shift(), col]=df[col].shift()
     #df = df.iloc[1:]
-    #df = df.iloc[:-1] # remove current day's measurement until noon
+    df = df.iloc[:-1] # remove current day's measurement until noon
     #df = df.tail(1) # write only energy of the previous day
     
     
@@ -273,31 +273,31 @@ def send_data(mydf, device, entity):
     if df.empty:
         return
     
-    try:
-        print(device, df)
-        # transform ts and write telemetry
-        df['ts'] = df.index
-        df['ts'] = df.apply(lambda row: int(row['ts'].timestamp()) * 1000, axis=1)
-        df.set_index('ts', inplace=True, drop=True)
-        df = df.sort_index()
-        mydict = df.to_dict('index')
+    #try:
+    #print(device, df)
+    # transform ts and write telemetry
+    df['ts'] = df.index
+    df['ts'] = df.apply(lambda row: int(row['ts'].timestamp()) * 1000, axis=1)
+    df.set_index('ts', inplace=True, drop=True)
+    df = df.sort_index()
+    mydict = df.to_dict('index')
 
-        l=[]
-        for i, (key, value) in enumerate(mydict.items(), 1):
-            newdict={}
-            newdict['ts'] = key
-            # newdict['values'] = value
-            newdict['values'] = { k: v for k, v in value.items() if v == v }
-            l.append(newdict)
-        # write to json and send telemetry to TB
-        my_json = json.dumps(l)
-        
-        
-        thingsAPI.send_telemetry(ADDRESS, device, my_json,entity)
-        # print('Telemetry sent for device {}'.format(device))
+    l=[]
+    for i, (key, value) in enumerate(mydict.items(), 1):
+        newdict={}
+        newdict['ts'] = key
+        # newdict['values'] = value
+        newdict['values'] = { k: v for k, v in value.items() if v == v }
+        l.append(newdict)
+    # write to json and send telemetry to TB
+    my_json = json.dumps(l)
+    
+    
+    thingsAPI.send_telemetry(ADDRESS, device, my_json,entity)
+    # print('Telemetry sent for device {}'.format(device))
 
-    except Exception as e:
-        print(f"Error sending data for device {device}: {e}")
+    #except Exception as e:
+    #    print(f"Error sending data for device {device}: {e}")
      
 
 def main():
@@ -339,68 +339,74 @@ def main():
     start_time = str(int(start_time.timestamp()) * 1000)
     end_time = str(int(end_time.timestamp()) * 1000)
     
-    month = 3
+    #month = 3
     year = 2024
-    for month in [3]:
-        startm = datetime.datetime(year = year, month=month, day=1)
-        endm = startm + relativedelta(months=1)
+    for month in [3,4,5,6]:
+        start_time = datetime.datetime(year = year, month=month, day=1)
+        end_time = start_time + relativedelta(months=1)
         tmzn = pytz.timezone('Europe/Athens')    
-        endm = tmzn.localize(endm)
-        startm = tmzn.localize(startm)
-        end_time = str(int((endm ).timestamp() * 1000))
-        start_time = str(int((startm ).timestamp() * 1000))
-    #start_time = '1691661600000' 
-    #end_time = '1704884400000'
+        end_time = tmzn.localize(end_time)
+        start_time = tmzn.localize(start_time)
+        start_time = start_time +relativedelta(days=-1)
+        start_time = start_time + datetime.timedelta(hours=13)
+        end_time = end_time + datetime.timedelta(hours=13)
+        end_time = str(int((end_time ).timestamp() * 1000))
+        start_time = str(int((start_time ).timestamp() * 1000))
+    #start_time = '1709204400000' 
+    #end_time = '1711965600000'
     
 
-    print(start_time,end_time)
-    
-    # iterate over physical meters to clean energy values
-    for meter in physical_meters:
-        print(meter)
-        [df, legadict] = read_data(meter, acc_token, start_time, end_time,descriptors, legadict, 'device')
-        cleaned[meter] = df
-    
-
-    # Write the data to the file
-    filename = 'meters_info.json'
-    with open('legacy_info.json', 'w', encoding='utf-8') as file:
-        json.dump(legadict, file, ensure_ascii=False, indent=4)
-
-    # iterate over meters
-    for virtualName,submeters in virtualMeters.items():
-        print(virtualName)
-        if virtualName in subtract_meters:
-            operation=0 # sub
-        elif virtualName in complex_calc_meters:
-            operation = 2 # div then mul
-        else:
-            operation=1 #add
-
-        agg = create_virtual(submeters, cleaned, operation)
-        print(agg.head())
-        if not agg.empty:
-            cleaned[virtualName] = agg
-        # agg = postproc(agg, virtualName)
-        #send_data(agg,virtualName, address)
+        print(start_time,end_time)
         
+        # iterate over physical meters to clean energy values
+        for meter in physical_meters:
+            print(meter)
+            [df, legadict] = read_data(meter, acc_token, start_time, end_time,descriptors, legadict, 'device')
+            cleaned[meter] = df
+        
+        print(cleaned.keys())
+        # Write the data to the file
+        filename = 'meters_info.json'
+        with open('legacy_info.json', 'w', encoding='utf-8') as file:
+            json.dump(legadict, file, ensure_ascii=False, indent=4)
     
-    # Create list of meters (physical+virtual) whose telemetry will be stored in TB
-    lst = [value for value in list(cleaned.keys()) if value not in unwriteable]
-    filtered = {key: cleaned[key] for key in lst if key in cleaned}
-    for key,value in cleaned.items():
-        print(key,value.head())
-    for key,data in filtered.items():
-        if key in assetdevs:
-            entity = 'ASSET'
-        else:
-            entity = 'DEVICE'
-        #if key=='Πλανητάριο':
-        #    send_data(data, key, entity)
-
-
-    # for key,value in cleaned.items():
-    #     print(key,value)
+        # iterate over meters
+        for virtualName,submeters in virtualMeters.items():
+            print(virtualName)
+            if virtualName in subtract_meters:
+                operation=0 # sub
+            elif virtualName in complex_calc_meters:
+                operation = 2 # div then mul
+            else:
+                operation=1 #add
+    
+            agg = create_virtual(submeters, cleaned, operation)
+            
+            if not agg.empty:
+                cleaned[virtualName] = agg
+            # agg = postproc(agg, virtualName)
+            #send_data(agg,virtualName, address)
+            
+        
+        # Create list of meters (physical+virtual) whose telemetry will be stored in TB
+        lst = [value for value in list(cleaned.keys()) if value not in unwriteable]
+        filtered = {key: cleaned[key] for key in lst if key in cleaned}
+        #for key,value in cleaned.items():
+            #print(key,value.head())
+        for key,data in filtered.items():
+        
+            if key in assetdevs:
+                entity = 'ASSET'
+                send_data(data, key, entity)
+            else:
+                entity = 'DEVICE'
+                
+            if key!='VIRTUAL METER 41 - ΛΟΙΠΑ ΦΟΡΤΙΑ ΕΓΚΑΤΑΣΤΑΣΗΣ':
+                print(key, entity)
+                send_data(data, key, entity)
+    
+    
+       
     
 if __name__ == "__main__":
     sys.exit(main())
