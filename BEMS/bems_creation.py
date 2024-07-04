@@ -179,7 +179,7 @@ def read_data(device, acc_token, start_time, end_time, descriptors, legadict, en
 
         # rename columns and resample daily
         df.rename(columns={'cnrgA':'clean_nrgA','cnrgB':'clean_nrgB','cnrgC':'clean_nrgC'}, inplace=True)
-        df = df.resample('1D', label='right').max()
+        df = df.resample('1D', label='left').max()
         legadict = legacy_info(df, device, legadict)
         #df = df.tail(1)
         # print('cleaned df daily:\n', df)
@@ -191,7 +191,7 @@ def read_data(device, acc_token, start_time, end_time, descriptors, legadict, en
             
         device_info = loaded_data[device]
         df = tmp1.copy()
-        df = align_resample(df,'1D', 'right')
+        df = align_resample(df,'1D', 'left')
         
         
         for ph in ['A','B','C']:
@@ -251,6 +251,25 @@ def create_virtual(vrtl, cleaned, operation):
 
 
 
+def create_virtual_diff(vrtl, cleaned):
+    agg = pd.DataFrame([])
+    df1 = cleaned[vrtl[0]].copy() # central meter
+    df1['totalCleanNrg'] = df1['clean_nrgA']+df1['clean_nrgB']+df1['clean_nrgC']
+
+    df2 = cleaned[vrtl[1]].copy() # central meter
+    df2['totalCleanNrg'] = df2['clean_nrgA']+df2['clean_nrgB']+df2['clean_nrgC']
+
+    agg = df1[['totalCleanNrg']].copy()
+    print(agg.head())
+    agg = agg.sub(df2[['totalCleanNrg']])
+    agg['clearn_nrgA'] = agg['totalCleanNrg']/3
+    agg['clearn_nrgB'] = agg['totalCleanNrg']/3
+    agg['clearn_nrgC'] = agg['totalCleanNrg']/3
+    print(agg.head())
+
+    return agg.dropna()
+
+
 def send_data(mydf, device, entity):
     """
     Write telemetry data to the API.
@@ -264,7 +283,7 @@ def send_data(mydf, device, entity):
          # sanity check for negative nrg
         while not df.loc[df[col]<df[col].shift()].empty: 
             df.loc[df[col]<df[col].shift(), col]=df[col].shift()
-    #df = df.iloc[1:]
+    df = df.iloc[1:]
     df = df.iloc[:-1] # remove current day's measurement until noon
     #df = df.tail(1) # write only energy of the previous day
     
@@ -294,7 +313,7 @@ def send_data(mydf, device, entity):
     
     
     thingsAPI.send_telemetry(ADDRESS, device, my_json,entity)
-    # print('Telemetry sent for device {}'.format(device))
+    print('Telemetry sent for device {}'.format(device))
 
     #except Exception as e:
     #    print(f"Error sending data for device {device}: {e}")
@@ -352,7 +371,7 @@ def main():
         end_time = end_time + datetime.timedelta(hours=13)
         end_time = str(int((end_time ).timestamp() * 1000))
         start_time = str(int((start_time ).timestamp() * 1000))
-    #start_time = '1709204400000' 
+    #start_time = '1708426800000' 
     #end_time = '1711965600000'
     
 
@@ -369,18 +388,20 @@ def main():
         filename = 'meters_info.json'
         with open('legacy_info.json', 'w', encoding='utf-8') as file:
             json.dump(legadict, file, ensure_ascii=False, indent=4)
-    
+
         # iterate over meters
         for virtualName,submeters in virtualMeters.items():
             print(virtualName)
             if virtualName in subtract_meters:
-                operation=0 # sub
+                create_virtual_diff(submeters, cleaned)
             elif virtualName in complex_calc_meters:
                 operation = 2 # div then mul
+                agg = create_virtual(submeters, cleaned, operation)
             else:
                 operation=1 #add
-    
-            agg = create_virtual(submeters, cleaned, operation)
+                agg = create_virtual(submeters, cleaned, operation)
+
+            
             
             if not agg.empty:
                 cleaned[virtualName] = agg
@@ -401,11 +422,11 @@ def main():
             else:
                 entity = 'DEVICE'
                 
-            if key!='VIRTUAL METER 41 - ΛΟΙΠΑ ΦΟΡΤΙΑ ΕΓΚΑΤΑΣΤΑΣΗΣ':
+            if key=='VIRTUAL METER 41 - ΛΟΙΠΑ ΦΟΡΤΙΑ ΕΓΚΑΤΑΣΤΑΣΗΣ':
                 print(key, entity)
                 send_data(data, key, entity)
-    
-    
+        
+        
        
     
 if __name__ == "__main__":
