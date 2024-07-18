@@ -109,6 +109,55 @@ def legacy_info(df, device, legadict):
     return legadict
 
 
+
+def read_virtual_data(device, acc_token, start_time, end_time, descriptors, entity):
+    """
+    Reads data of virtual freezer devices from the API and returns a DataFrame.
+    """
+    devid = thingsAPI.get_devid(ADDRESS, device, entity)
+    url = f"{ADDRESS}/api/plugins/telemetry/DEVICE/{devid}/values/timeseries"
+        
+    try:
+        response = requests.get(
+            url=url,
+            params={
+                "keys": descriptors,
+                "startTs": start_time,
+                "endTs": end_time,
+                "agg": "NONE",
+                "limit": 1000000
+            },
+            headers={
+                'Content-Type': 'application/json',
+                'Accept': '*/*',
+                'X-Authorization': acc_token
+            }
+        )
+        r2 = response.json()
+        if r2:
+                df = pd.concat(
+                    [pd.DataFrame(r2[desc]).rename(columns={'value': desc}).set_index('ts') for desc in r2],
+                    axis=1
+                )
+                df.reset_index(drop=False, inplace=True)
+                df['ts'] = pd.to_datetime(df['ts'], unit='ms')
+                df.sort_values(by=['ts'], inplace=True)
+                df.set_index('ts', inplace=True, drop=True)
+
+                if not df.empty:
+                    df = df.apply(pd.to_numeric, errors='coerce')
+                    df['ts'] = df.index
+                    df['ts'] = df['ts'].dt.tz_localize('utc').dt.tz_convert('Europe/Athens')
+                    df.set_index('ts',inplace = True, drop = True)
+                    df = df.rename(columns={'totalCleanNrg':'historicNrg'})
+                    print(df)
+
+    except Exception as e:
+        print(f"Error reading data for virtual device {device}: {e}")
+        
+    return df
+
+
 def read_data(device, acc_token, start_time, end_time, descriptors, legadict, entity):
     """
     Reads data from the API and returns a DataFrame.
@@ -212,7 +261,7 @@ def read_data(device, acc_token, start_time, end_time, descriptors, legadict, en
  
 
 
-def create_virtual(vrtl, cleaned, operation):
+def create_virtual(vrtl, cleaned, operation, historic):
     """
     Creates a virtual DataFrame by aggregating data from multiple devices.
     """
@@ -233,13 +282,53 @@ def create_virtual(vrtl, cleaned, operation):
             else:
                 return pd.DataFrame([])
     else:
-        df = cleaned[vrtl[0]]
-        totalAC = cleaned[vrtl[1]]
-        totalFreeze = cleaned[vrtl[2]]
-        if (not df.empty) and (not totalAC.empty) and (not totalFreeze.empty):
-            agg = df.copy()
-            agg = agg.div(totalAC)
-            agg = agg.mul(totalFreeze)
+
+        
+        agg = cleaned[vrtl[0]].copy() # AC of unit
+        agg['unitAC'] = agg['clean_nrgA']+agg['clean_nrgB']+agg['clean_nrgC']
+        agg = agg[['unitAC']]
+        
+        totalAC = cleaned[vrtl[1]].copy() # total AC
+        totalAC['AC'] = totalAC['clean_nrgA']+totalAC['clean_nrgB']+totalAC['clean_nrgC']
+        totalAC = totalAC[['AC']]
+
+        totalFreeze = cleaned[vrtl[2]].copy() # Sum of Freezers
+        totalFreeze['Freezer'] = totalFreeze['clean_nrgA']+totalFreeze['clean_nrgB']+totalFreeze['clean_nrgC']
+        totalFreeze = totalFreeze[['Freezer']]
+
+        
+        # First calculate deltas, then calculate complex freezer
+        if (not agg.empty) and (not totalAC.empty) and (not totalFreeze.empty):
+            agg = pd.concat([agg, totalAC, totalFreeze],axis=1)
+            agg['delta_unitAC'] = agg['unitAC']-agg['unitAC'].shift()
+            agg['delta_AC'] = agg['AC']-agg['AC'].shift()
+            agg['delta_Freezer'] = agg['Freezer']-agg['Freezer'].shift()
+            agg['totalCleanNrg'] = (agg['delta_unitAC']/agg['delta_AC'])*agg['delta_Freezer']
+            
+            # bring historic data to accumulate energy
+            agg = pd.concat([historic, agg], axis=1)
+            agg['test'] = agg['totalCleanNrg']
+            agg.loc[agg['historicNrg'].notna(),'test'] = np.nan
+            for i in range(1,len(agg)):
+                if np.isnan(agg['historicNrg'].iloc[i] ):
+                    agg['historicNrg'].iloc[i] = agg['historicNrg'].iloc[i-1]+agg['test'].iloc[i]
+            agg = agg.drop(['test','totalCleanNrg'], axis=1)
+            agg = agg.rename(columns={'historicNrg':'totalCleanNrg'})
+            print('after concatenation with historic:',agg)
+            # agg['totalCleanNrg'] = agg['totalCleanNrg'].cumsum()
+
+            # agg = df.copy()
+            # agg = agg.div(totalAC)
+            # agg = agg.mul(totalFreeze)
+
+            agg['clean_nrgA'] = agg['totalCleanNrg']/3
+            agg['clean_nrgB'] = agg['totalCleanNrg']/3
+            agg['clean_nrgC'] = agg['totalCleanNrg']/3
+            
+            agg = agg[['clean_nrgA','clean_nrgB','clean_nrgC']]
+            print('ready df:',agg)
+            # agg = agg.drop('totalCleanNrg',axis=1)
+            
         else:
             return pd.DataFrame([])
 
@@ -258,14 +347,14 @@ def create_virtual_diff(vrtl, cleaned):
 
     df2 = cleaned[vrtl[1]].copy() # central meter
     df2['totalCleanNrg'] = df2['clean_nrgA']+df2['clean_nrgB']+df2['clean_nrgC']
-
     agg = df1[['totalCleanNrg']].copy()
-    print(agg.head())
+    
     agg = agg.sub(df2[['totalCleanNrg']])
-    agg['clearn_nrgA'] = agg['totalCleanNrg']/3
-    agg['clearn_nrgB'] = agg['totalCleanNrg']/3
-    agg['clearn_nrgC'] = agg['totalCleanNrg']/3
-    print(agg.head())
+    
+    agg['clean_nrgA'] = agg['totalCleanNrg']/3
+    agg['clean_nrgB'] = agg['totalCleanNrg']/3
+    agg['clean_nrgC'] = agg['totalCleanNrg']/3
+    
 
     return agg.dropna()
 
@@ -277,12 +366,19 @@ def send_data(mydf, device, entity):
     df = mydf.copy()
     df = df.round()
     
+    
     # convert to int
     for col in ['clean_nrgA','clean_nrgB','clean_nrgC']:
         df[col] = df[col].astype(np.int64)
          # sanity check for negative nrg
         while not df.loc[df[col]<df[col].shift()].empty: 
-            df.loc[df[col]<df[col].shift(), col]=df[col].shift()
+            # df.loc[df[col]<df[col].shift(), col]=df[col].shift()
+            
+            df.loc[df[col]<df[col].shift(), col]=np.nan
+            df[col] = df[col].ffill()
+            df[col] = df[col].bfill()
+            
+    
     df = df.iloc[1:]
     df = df.iloc[:-1] # remove current day's measurement until noon
     #df = df.tail(1) # write only energy of the previous day
@@ -298,9 +394,9 @@ def send_data(mydf, device, entity):
     df['ts'] = df.index
     df['ts'] = df.apply(lambda row: int(row['ts'].timestamp()) * 1000, axis=1)
     df.set_index('ts', inplace=True, drop=True)
+    df = df.astype(np.int64)
     df = df.sort_index()
     mydict = df.to_dict('index')
-
     l=[]
     for i, (key, value) in enumerate(mydict.items(), 1):
         newdict={}
@@ -310,7 +406,6 @@ def send_data(mydf, device, entity):
         l.append(newdict)
     # write to json and send telemetry to TB
     my_json = json.dumps(l)
-    
     
     thingsAPI.send_telemetry(ADDRESS, device, my_json,entity)
     print('Telemetry sent for device {}'.format(device))
@@ -360,74 +455,86 @@ def main():
     
     #month = 3
     year = 2024
-    for month in [3,4,5,6]:
-        start_time = datetime.datetime(year = year, month=month, day=1)
-        end_time = start_time + relativedelta(months=1)
-        tmzn = pytz.timezone('Europe/Athens')    
-        end_time = tmzn.localize(end_time)
-        start_time = tmzn.localize(start_time)
-        start_time = start_time +relativedelta(days=-1)
-        start_time = start_time + datetime.timedelta(hours=13)
-        end_time = end_time + datetime.timedelta(hours=13)
-        end_time = str(int((end_time ).timestamp() * 1000))
-        start_time = str(int((start_time ).timestamp() * 1000))
-    #start_time = '1708426800000' 
-    #end_time = '1711965600000'
+    # for month in [3,4,5,6]:
+    #     start_time = datetime.datetime(year = year, month=month, day=1)
+    #     end_time = start_time + relativedelta(months=1)
+    #     tmzn = pytz.timezone('Europe/Athens')    
+    #     end_time = tmzn.localize(end_time)
+    #     start_time = tmzn.localize(start_time)
+    #     start_time = start_time +relativedelta(days=-1)
+    #     start_time = start_time + datetime.timedelta(hours=13)
+    #     end_time = end_time + datetime.timedelta(hours=13)
+    #     end_time = str(int((end_time ).timestamp() * 1000))
+    #     start_time = str(int((start_time ).timestamp() * 1000))
+    # start_time = '1706785200000' 
+    # end_time = '1721286000000'
+    # end_time = '1709290800000'
     
 
-        print(start_time,end_time)
-        
-        # iterate over physical meters to clean energy values
-        for meter in physical_meters:
-            print(meter)
-            [df, legadict] = read_data(meter, acc_token, start_time, end_time,descriptors, legadict, 'device')
-            cleaned[meter] = df
-        
-        print(cleaned.keys())
-        # Write the data to the file
-        filename = 'meters_info.json'
-        with open('legacy_info.json', 'w', encoding='utf-8') as file:
-            json.dump(legadict, file, ensure_ascii=False, indent=4)
-
-        # iterate over meters
-        for virtualName,submeters in virtualMeters.items():
-            print(virtualName)
-            if virtualName in subtract_meters:
-                create_virtual_diff(submeters, cleaned)
-            elif virtualName in complex_calc_meters:
-                operation = 2 # div then mul
-                agg = create_virtual(submeters, cleaned, operation)
-            else:
-                operation=1 #add
-                agg = create_virtual(submeters, cleaned, operation)
-
-            
-            
-            if not agg.empty:
-                cleaned[virtualName] = agg
-            # agg = postproc(agg, virtualName)
-            #send_data(agg,virtualName, address)
-            
-        
-        # Create list of meters (physical+virtual) whose telemetry will be stored in TB
-        lst = [value for value in list(cleaned.keys()) if value not in unwriteable]
-        filtered = {key: cleaned[key] for key in lst if key in cleaned}
-        #for key,value in cleaned.items():
-            #print(key,value.head())
-        for key,data in filtered.items():
-        
-            if key in assetdevs:
-                entity = 'ASSET'
-                send_data(data, key, entity)
-            else:
-                entity = 'DEVICE'
-                
-            if key=='VIRTUAL METER 41 - ΛΟΙΠΑ ΦΟΡΤΙΑ ΕΓΚΑΤΑΣΤΑΣΗΣ':
-                print(key, entity)
-                send_data(data, key, entity)
-        
-        
-       
+    print(start_time,end_time)
     
+    # iterate over physical meters to clean energy values
+    for meter in physical_meters:
+        # print(meter)
+        [df, legadict] = read_data(meter, acc_token, start_time, end_time,descriptors, legadict, 'device')
+        cleaned[meter] = df
+    
+    
+    # Write the data to the file
+    filename = 'meters_info.json'
+    with open('legacy_info.json', 'w', encoding='utf-8') as file:
+        json.dump(legadict, file, ensure_ascii=False, indent=4)
+
+    # iterate over meters
+    for virtualName,submeters in virtualMeters.items():
+        print(virtualName)
+        if virtualName in subtract_meters:
+            print('SUBTRACTING')
+            agg = create_virtual_diff(submeters, cleaned)
+        elif virtualName in complex_calc_meters:
+            vrtl_desc = 'totalCleanNrg'
+            vrtl_fr = read_virtual_data(virtualName, acc_token, start_time, end_time, vrtl_desc, 'device')
+            
+            operation = 2 # div then mul
+            agg = create_virtual(submeters, cleaned, operation, vrtl_fr)
+        else:
+            operation=1 #add
+            agg = create_virtual(submeters, cleaned, operation, {})
+
+        
+        
+        if not agg.empty:
+            cleaned[virtualName] = agg
+        # agg = postproc(agg, virtualName)
+        #send_data(agg,virtualName, address)
+        
+    
+    # Create list of meters (physical+virtual) whose telemetry will be stored in TB
+    lst = [value for value in list(cleaned.keys()) if value not in unwriteable]
+    filtered = {key: cleaned[key] for key in lst if key in cleaned}
+    
+    # for key,data in filtered.items():
+    
+    #     if key in assetdevs:
+    #         entity = 'ASSET'
+    #         # send_data(data, key, entity)
+    #     else:
+    #         entity = 'DEVICE'
+            
+    #     if key in ['VIRTUAL METER 41 - ΛΟΙΠΑ ΦΟΡΤΙΑ ΕΓΚΑΤΑΣΤΑΣΗΣ','Λοιπά Φορτία Eγκατάστασης','Υποσύνολο','Κέντρο Ερευνας & Τεχνολογίας (ΚΕΤ)',"Virtual Meter 36 - ΚΑΤΑΝΑΛΩΣΗ ΨΥΚΤΩΝ ΚΕΤ",
+    #     "Virtual Meter 37 - ΚΑΤΑΝΑΛΩΣΗ ΨΥΚΤΩΝ ΑΜΦΙΘΕΑΤΡΟ",
+    #     "Virtual Meter 38 - ΚΑΤΑΝΑΛΩΣΗ ΨΥΚΤΩΝ ΑΙΘ. ΔΙΑΛΕΞΕΩΝ  Α' ΟΡΟΦΟΣ",
+    #     "Virtual Meter 39 - ΚΑΤΑΝΑΛΩΣΗ ΨΥΚΤΩΝ U-TECH LAB",
+    #     "Virtual Meter 40 - ΚΑΤΑΝΑΛΩΣΗ ΨΥΚΤΩΝ ΒΙΒΛΙΟΘΗΚΗΣ",
+    #     "Κέντρο Ερευνας & Τεχνολογίας (ΚΕΤ)",
+    #     "Αμφιθέατρο",
+    #     "Αίθουσα Διαλέξεων",
+    #     "U - TECH LAB",
+    #     "Βιβλιοθήκη"]:
+    #         print(key, entity, data.head(10))
+    #         send_data(data, key, entity)
+        
+    
+     
 if __name__ == "__main__":
     sys.exit(main())

@@ -113,8 +113,8 @@ def main():
     # define descriptors and access token
     descriptors = 'clean_nrgA,clean_nrgB,clean_nrgC'
     acc_token = thingsAPI.get_access_token(ADDRESS)
-    start_time = '1708380000000' 
-    end_time = '1719781200000'
+    start_time = '1706785200000' 
+    end_time = '1721286000000'
     
     
     # load meter info
@@ -136,15 +136,15 @@ def main():
     
     for meter in totalist:
         print(meter)
-        if meter=='VIRTUAL METER 41 - ΛΟΙΠΑ ΦΟΡΤΙΑ ΕΓΚΑΤΑΣΤΑΣΗΣ':
-            if meter in assetdevs:
-                entity = 'asset'
-            else:
-                entity = 'device'
-            devid = thingsAPI.get_devid(ADDRESS, meter, entity)
-            df = read_data(meter, acc_token, start_time, end_time,descriptors, entity)
-            
-            send_data(df, meter, entity)
+        # if meter in ['VIRTUAL METER 41 - ΛΟΙΠΑ ΦΟΡΤΙΑ ΕΓΚΑΤΑΣΤΑΣΗΣ','Λοιπά Φορτία Eγκατάστασης','Υποσύνολο']:
+        if meter in assetdevs:
+            entity = 'asset'
+        else:
+            entity = 'device'
+        devid = thingsAPI.get_devid(ADDRESS, meter, entity)
+        df = read_data(meter, acc_token, start_time, end_time,descriptors, entity)
+        
+        send_data(df, meter, entity)
     
     
     
