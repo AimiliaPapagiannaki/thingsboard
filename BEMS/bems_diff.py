@@ -19,6 +19,30 @@ import thingsAPI
 ADDRESS = "http://localhost:8080"    
 #ADDRESS = "https://mi6.meazon.com"
 
+def correct_cumulative_column(df, column_name):
+    # Extract the column to a list for easier manipulation
+    values = df[column_name].tolist()
+
+    # Iterate through the list and correct the values
+    for i in range(1, len(values)):
+        if values[i] < values[i-1]:
+            diff = values[i-1] - values[i]
+            for j in range(i, len(values)):
+                values[j] += diff
+    
+    # Assign the corrected values back to the DataFrame
+    df[column_name] = values
+    return df
+
+def preprocess_nrg(df):
+    for ph in ['A','B','C']:
+        # check if there are incidents of negative delta nrg
+        if not df.loc[df['cnrg'+ph]<df['cnrg'+ph].shift()].empty:
+            df = correct_cumulative_column(df, 'cnrg'+ph)
+    
+    return df
+
+
 def align_resample(df,interv, label):
     """
     Aligns and resamples the DataFrame to the specified interval.
@@ -29,6 +53,7 @@ def align_resample(df,interv, label):
     df = df.resample(interv, label=label).max()
 
     return df
+
 
 
 def handle_missing(df, tmp1):
@@ -156,14 +181,14 @@ def read_virtual_data(device, acc_token, start_time, end_time, descriptors, enti
         print(f"Error reading data for virtual device {device}: {e}")
         
     return df
-
+ 
 
 def read_data(device, acc_token, start_time, end_time, descriptors, legadict, entity):
     """
     Reads data from the API and returns a DataFrame.
     """
     devid = thingsAPI.get_devid(ADDRESS, device, entity)
-    
+    print(device)
     # Create date range
     start_dt = pd.to_datetime(int(start_time), unit='ms')
     end_dt = pd.to_datetime(int(end_time), unit='ms')
@@ -221,28 +246,24 @@ def read_data(device, acc_token, start_time, end_time, descriptors, legadict, en
 
     if not df.empty:
         df = df.apply(pd.to_numeric, errors='coerce')
-        df = align_resample(df, '1h', 'left')
         
+        # address globack problem if existent
+        df = preprocess_nrg(df)
+        # resample on hourly basis
+        df = align_resample(df, '1h', 'left')
+        # fill missing values, if any
         df = handle_missing(df, tmp1)
         
 
         # rename columns and resample daily
         df.rename(columns={'cnrgA':'clean_nrgA','cnrgB':'clean_nrgB','cnrgC':'clean_nrgC'}, inplace=True)
         df = df.resample('1D', label='left').max()
-        
-        ## Check if device is 102.402.002050, to correct cnrg after replacement
-        if device=='102.402.002050':
-            deltaA = 250206-5941
-            deltaB = 250206-6213
-            deltaC = 250206-5905
-            avgdelta = (deltaA + deltaB + deltaC)/3
+        print('df before delta:',df)
+        for ph in ['A','B','C']:
+            df['clean_nrg'+ph] = df['clean_nrg'+ph]-df['clean_nrg'+ph].shift()
+        print('df after delta:',df)
 
-            df['total'] = df['clean_nrgA'] + df['clean_nrgB'] + df['clean_nrgC']
-            for ph in ['A','B','C']:
-                df['clean_nrg'+ph] = df['total']/3 + avgdelta
-            df = df.drop('total', axis=1)
-
-        legadict = legacy_info(df, device, legadict)
+        # legadict = legacy_info(df, device, legadict)
         #df = df.tail(1)
         # print('cleaned df daily:\n', df)
     else:
@@ -254,7 +275,7 @@ def read_data(device, acc_token, start_time, end_time, descriptors, legadict, en
         device_info = loaded_data[device]
         df = tmp1.copy()
         df = align_resample(df,'1D', 'left')
-        
+         
         
         for ph in ['A','B','C']:
             df['clean_nrg'+ph] = np.nan
@@ -459,7 +480,7 @@ def main():
     end_time = end_time - datetime.timedelta(hours=end_time.hour, minutes=end_time.minute, seconds=end_time.second,
                                                     microseconds=end_time.microsecond)
     
-    start_time = end_time +relativedelta(days=-8)
+    start_time = end_time +relativedelta(days=-5)
     start_time = start_time + datetime.timedelta(hours=13)
     end_time = end_time + datetime.timedelta(hours=13)
     
@@ -494,62 +515,62 @@ def main():
         cleaned[meter] = df
     
     
-    # Write the data to the file
-    filename = 'meters_info.json'
-    with open('legacy_info.json', 'w', encoding='utf-8') as file:
-        json.dump(legadict, file, ensure_ascii=False, indent=4)
+    # # Write the data to the file
+    # filename = 'meters_info.json'
+    # with open('legacy_info.json', 'w', encoding='utf-8') as file:
+    #     json.dump(legadict, file, ensure_ascii=False, indent=4)
 
-    # iterate over meters
-    for virtualName,submeters in virtualMeters.items():
-        print(virtualName)
-        if virtualName in subtract_meters:
-            print('SUBTRACTING')
-            agg = create_virtual_diff(submeters, cleaned)
-        elif virtualName in complex_calc_meters:
-            vrtl_desc = 'totalCleanNrg'
-            vrtl_fr = read_virtual_data(virtualName, acc_token, start_time, end_time, vrtl_desc, 'device')
+    # # iterate over meters
+    # for virtualName,submeters in virtualMeters.items():
+    #     print(virtualName)
+    #     if virtualName in subtract_meters:
+    #         print('SUBTRACTING')
+    #         agg = create_virtual_diff(submeters, cleaned)
+    #     elif virtualName in complex_calc_meters:
+    #         vrtl_desc = 'totalCleanNrg'
+    #         vrtl_fr = read_virtual_data(virtualName, acc_token, start_time, end_time, vrtl_desc, 'device')
             
-            operation = 2 # div then mul
-            agg = create_virtual(submeters, cleaned, operation, vrtl_fr)
-        else:
-            operation=1 #add
-            agg = create_virtual(submeters, cleaned, operation, {})
+    #         operation = 2 # div then mul
+    #         agg = create_virtual(submeters, cleaned, operation, vrtl_fr)
+    #     else:
+    #         operation=1 #add
+    #         agg = create_virtual(submeters, cleaned, operation, {})
 
         
         
-        if not agg.empty:
-            cleaned[virtualName] = agg
-        # agg = postproc(agg, virtualName)
-        #send_data(agg,virtualName, address)
+    #     if not agg.empty:
+    #         cleaned[virtualName] = agg
+    #     # agg = postproc(agg, virtualName)
+    #     #send_data(agg,virtualName, address)
         
     
-    # Create list of meters (physical+virtual) whose telemetry will be stored in TB
-    lst = [value for value in list(cleaned.keys()) if value not in unwriteable]
-    filtered = {key: cleaned[key] for key in lst if key in cleaned}
+    # # Create list of meters (physical+virtual) whose telemetry will be stored in TB
+    # lst = [value for value in list(cleaned.keys()) if value not in unwriteable]
+    # filtered = {key: cleaned[key] for key in lst if key in cleaned}
     
-    # write telemetry
-    for key,data in filtered.items():
+    # # write telemetry
+    # for key,data in filtered.items():
     
-        if key in assetdevs:
-            entity = 'ASSET'
-            # send_data(data, key, entity)
-        else:
-            entity = 'DEVICE'
-        #print(key, entity, data.head())
-        send_data(data, key, entity)
+    #     if key in assetdevs:
+    #         entity = 'ASSET'
+    #         # send_data(data, key, entity)
+    #     else:
+    #         entity = 'DEVICE'
+    #     #print(key, entity, data.head())
+    #     send_data(data, key, entity)
             
-    #     if key in ['VIRTUAL METER 41 - ΛΟΙΠΑ ΦΟΡΤΙΑ ΕΓΚΑΤΑΣΤΑΣΗΣ','Λοιπά Φορτία Eγκατάστασης','Υποσύνολο','Κέντρο Ερευνας & Τεχνολογίας (ΚΕΤ)',"Virtual Meter 36 - ΚΑΤΑΝΑΛΩΣΗ ΨΥΚΤΩΝ ΚΕΤ",
-    #     "Virtual Meter 37 - ΚΑΤΑΝΑΛΩΣΗ ΨΥΚΤΩΝ ΑΜΦΙΘΕΑΤΡΟ",
-    #     "Virtual Meter 38 - ΚΑΤΑΝΑΛΩΣΗ ΨΥΚΤΩΝ ΑΙΘ. ΔΙΑΛΕΞΕΩΝ  Α' ΟΡΟΦΟΣ",
-    #     "Virtual Meter 39 - ΚΑΤΑΝΑΛΩΣΗ ΨΥΚΤΩΝ U-TECH LAB",
-    #     "Virtual Meter 40 - ΚΑΤΑΝΑΛΩΣΗ ΨΥΚΤΩΝ ΒΙΒΛΙΟΘΗΚΗΣ",
-    #     "Κέντρο Ερευνας & Τεχνολογίας (ΚΕΤ)",
-    #     "Αμφιθέατρο",
-    #     "Αίθουσα Διαλέξεων",
-    #     "U - TECH LAB",
-    #     "Βιβλιοθήκη"]:
-    #         print(key, entity, data.head(10))
-    #         send_data(data, key, entity)
+    # #     if key in ['VIRTUAL METER 41 - ΛΟΙΠΑ ΦΟΡΤΙΑ ΕΓΚΑΤΑΣΤΑΣΗΣ','Λοιπά Φορτία Eγκατάστασης','Υποσύνολο','Κέντρο Ερευνας & Τεχνολογίας (ΚΕΤ)',"Virtual Meter 36 - ΚΑΤΑΝΑΛΩΣΗ ΨΥΚΤΩΝ ΚΕΤ",
+    # #     "Virtual Meter 37 - ΚΑΤΑΝΑΛΩΣΗ ΨΥΚΤΩΝ ΑΜΦΙΘΕΑΤΡΟ",
+    # #     "Virtual Meter 38 - ΚΑΤΑΝΑΛΩΣΗ ΨΥΚΤΩΝ ΑΙΘ. ΔΙΑΛΕΞΕΩΝ  Α' ΟΡΟΦΟΣ",
+    # #     "Virtual Meter 39 - ΚΑΤΑΝΑΛΩΣΗ ΨΥΚΤΩΝ U-TECH LAB",
+    # #     "Virtual Meter 40 - ΚΑΤΑΝΑΛΩΣΗ ΨΥΚΤΩΝ ΒΙΒΛΙΟΘΗΚΗΣ",
+    # #     "Κέντρο Ερευνας & Τεχνολογίας (ΚΕΤ)",
+    # #     "Αμφιθέατρο",
+    # #     "Αίθουσα Διαλέξεων",
+    # #     "U - TECH LAB",
+    # #     "Βιβλιοθήκη"]:
+    # #         print(key, entity, data.head(10))
+    # #         send_data(data, key, entity)
         
     
      
