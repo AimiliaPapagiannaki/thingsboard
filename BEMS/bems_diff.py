@@ -321,7 +321,6 @@ def create_virtual(vrtl, cleaned, operation):
         for submeter in vrtl:
             
             df = cleaned[submeter]
-            print(submeter, df)
             if not df.empty:
                 if not agg.empty:
                     if operation == 1:
@@ -330,9 +329,10 @@ def create_virtual(vrtl, cleaned, operation):
                         agg = agg.sub(df, fill_value=0)                        
                 else:
                     agg = df
-                print(agg)
+                
             else:
                 return pd.DataFrame([])
+        agg['totalCleanNrg'] = agg['clean_nrgA']+agg['clean_nrgB']+agg['clean_nrgC']
     else:
 
         
@@ -362,7 +362,7 @@ def create_virtual(vrtl, cleaned, operation):
             agg['clean_nrgB'] = agg['totalCleanNrg']/3
             agg['clean_nrgC'] = agg['totalCleanNrg']/3
             
-            agg = agg[['clean_nrgA','clean_nrgB','clean_nrgC']]
+            agg = agg[['clean_nrgA','clean_nrgB','clean_nrgC','totalCleanNrg']]
             
             # agg = agg.drop('totalCleanNrg',axis=1)
             
@@ -455,7 +455,8 @@ def send_data(mydf, device, entity):
 def store_primitive_cleaned(cleaned):
     # Initialize an empty dataframe to store the combined data
     combined_sums = pd.DataFrame()
-    copied_dict = cleaned.deepcopy()
+    # copied_dict = copy.deepcopy(cleaned)
+    copied_dict = cleaned.copy()
     # Iterate through the dictionary
     for name, mydf in copied_dict.items():
         # Calculate the sum of columns A, B, C elementwise
@@ -466,8 +467,9 @@ def store_primitive_cleaned(cleaned):
         combined_sums[name] = mydf['Sum']
     combined_sums['Date'] = mydf['Date']
     # Save the combined dataframe to an Excel file
-    # combined_sums.to_excel('combined_sums.xlsx', index=False)
+    combined_sums.to_excel('combined_sums.xlsx', index=False)
     del combined_sums
+
  
 def main():
     
@@ -546,7 +548,7 @@ def main():
     for virtualName,submeters in virtualMeters.items():
         print(virtualName)
         if virtualName in subtract_meters:
-            print('SUBTRACTING')
+            
             agg = create_virtual_diff(submeters, cleaned)
         elif virtualName in complex_calc_meters:            
             operation = 2 # div then mul
@@ -555,11 +557,12 @@ def main():
             operation=1 #add
             agg = create_virtual(submeters, cleaned, operation)
 
-        
+        print(agg)
         
         if not agg.empty:
             cleaned[virtualName] = agg
 
+    store_primitive_cleaned(cleaned)
         
     
     # # Create list of meters (physical+virtual) whose telemetry will be stored in TB
