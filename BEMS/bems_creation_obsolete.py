@@ -16,45 +16,19 @@ from dateutil.relativedelta import relativedelta
 from dateutil.tz import gettz
 import thingsAPI
 
-pd.set_option('display.max_rows', None)
 ADDRESS = "http://localhost:8080"    
 #ADDRESS = "https://mi6.meazon.com"
 
-def correct_cumulative_column(df, column_name):
-    # Extract the column to a list for easier manipulation
-    values = df[column_name].tolist()
-
-    # Iterate through the list and correct the values
-    for i in range(1, len(values)):
-        if values[i] < values[i-1]:
-            diff = values[i-1] - values[i]
-            for j in range(i, len(values)):
-                values[j] += diff
-    
-    # Assign the corrected values back to the DataFrame
-    df[column_name] = values
-    return df
-
-def preprocess_nrg(df):
-    for ph in ['A','B','C']:
-        # check if there are incidents of negative delta nrg
-        if not df.loc[df['cnrg'+ph]<df['cnrg'+ph].shift()].empty:
-            df = correct_cumulative_column(df, 'cnrg'+ph)
-    
-    return df
-
-
-def align_resample(df):
+def align_resample(df,interv, label):
     """
     Aligns and resamples the DataFrame to the specified interval.
     """
     df['ts'] = df.index
     df['ts'] = df['ts'].dt.tz_localize('utc').dt.tz_convert('Europe/Athens')
     df.set_index('ts',inplace = True, drop = True)
-    #df = df.resample(interv, label=label).max()
+    df = df.resample(interv, label=label).max()
 
     return df
-
 
 
 def handle_missing(df, tmp1):
@@ -65,8 +39,7 @@ def handle_missing(df, tmp1):
     [df, avgDiffs] = interp_missing(df)
     #print('avgdiffs', avgDiffs)
 
-    tmp1 = align_resample(tmp1)
-    # tmp1 = tmp1.resample('5T').max()
+    tmp1 = align_resample(tmp1,'1h','left')
     tmp1 = pd.concat([tmp1,df], axis=1)
     tmp1 = tmp1.sort_index()
     
@@ -97,7 +70,6 @@ def interp_missing(df):
     '''
     Interpolate middle missing values and calculate average diff
     '''
-    df = df.resample('5T').max()
     # interpolate backwards
     df = df.interpolate(method='linear', limit_direction='backward')
     avgDiffs={}
@@ -127,20 +99,15 @@ def interp_edges(df, fillvalue, edge):
 
 def legacy_info(df, device, legadict):
     tmp = df.copy()
-    
-    ind = tmp.index[-1]
-    tmp = tmp.iloc[-1]
+    tmp = tmp.round()
+    for col in tmp.columns:
+        tmp['diff_'+col] = tmp[col]-tmp[col].shift()
+    tmp = tmp.iloc[-2]
     mydict = tmp.to_dict()
-    mydict['ts'] = ind
     legadict[device] = mydict
     
     return legadict
 
-# Function to convert Timestamp to string
-def convert_timestamp(obj):
-    if isinstance(obj, pd.Timestamp):
-        return obj.isoformat()
-    raise TypeError("Type not serializable")
 
 
 def read_virtual_data(device, acc_token, start_time, end_time, descriptors, entity):
@@ -189,7 +156,7 @@ def read_virtual_data(device, acc_token, start_time, end_time, descriptors, enti
         print(f"Error reading data for virtual device {device}: {e}")
         
     return df
- 
+
 
 def read_data(device, acc_token, start_time, end_time, descriptors, legadict, entity):
     """
@@ -203,8 +170,7 @@ def read_data(device, acc_token, start_time, end_time, descriptors, legadict, en
     
 
     # Create a datetime index with a desired frequency (e.g., 'D' for daily)
-    # datetime_index = pd.date_range(start=start_dt, end=end_dt, freq='H')
-    datetime_index = pd.date_range(start=start_dt, end=end_dt, freq='5T')
+    datetime_index = pd.date_range(start=start_dt, end=end_dt, freq='H')
     datetime_index = datetime_index[:-1]
 
     tmp1 = pd.DataFrame(index=datetime_index)
@@ -255,63 +221,60 @@ def read_data(device, acc_token, start_time, end_time, descriptors, legadict, en
 
     if not df.empty:
         df = df.apply(pd.to_numeric, errors='coerce')
+        df = align_resample(df, '1h', 'left')
         
-        # address globack problem if existent
-        df = preprocess_nrg(df)
-        # resample on hourly basis
-        df = align_resample(df)
-        
-        # fill missing values, if any
         df = handle_missing(df, tmp1)
-
         
 
         # rename columns and resample daily
         df.rename(columns={'cnrgA':'clean_nrgA','cnrgB':'clean_nrgB','cnrgC':'clean_nrgC'}, inplace=True)
-        #df = df.resample('1D', label='left').max()
+        df = df.resample('1D', label='left').max()
         
-        # Convert clean_nrg to delta nrg
-        # print('df before delta:',df)
-        for ph in ['A','B','C']:
-            df['clean_nrg'+ph] = df['clean_nrg'+ph]-df['clean_nrg'+ph].shift()
-        
-        df = df.resample('1D', label='left').sum()
-        
-        # write last row to dictionary, to have it as reference in case of missing values
+        ## Check if device is 102.402.002050, to correct cnrg after replacement
+        if device=='102.402.002050':
+            deltaA = 250206-5941
+            deltaB = 250206-6213
+            deltaC = 250206-5905
+            avgdelta = (deltaA + deltaB + deltaC)/3
+
+            df['total'] = df['clean_nrgA'] + df['clean_nrgB'] + df['clean_nrgC']
+            for ph in ['A','B','C']:
+                df['clean_nrg'+ph] = df['total']/3 + avgdelta
+            df = df.drop('total', axis=1)
+
         legadict = legacy_info(df, device, legadict)
-        
-        
+        #df = df.tail(1)
+        # print('cleaned df daily:\n', df)
     else:
         print('empty df! must retrieve estimated value')
         filename = 'legacy_info.json'
         with open(filename, 'r', encoding='utf-8') as file:
-            loaded_data = json.load(file) 
-        
-        # Convert the dictionary to a DataFrame
+            loaded_data = json.load(file)
+            
         device_info = loaded_data[device]
-        tmp1 = pd.DataFrame(index=datetime_index)
         df = tmp1.copy()
-        df = align_resample(df)
-        df = df.resample('1D', label='left').sum()
+        df = align_resample(df,'1D', 'left')
         
-        # Create a DataFrame with the timestamp as the index
-        tmpdf = pd.DataFrame(device_info, index=['ts'])
-        tmpdf['ts'] = pd.to_datetime(tmpdf['ts'])
-        # Set the 'timestamp' column as the index
-        tmpdf.set_index('ts', inplace=True)
         
-        # Create a DataFrame with the timestamp as the index
-        df = pd.concat([df, tmpdf], axis=1)
-        df = df.ffill() # forward fill
-        df = df.bfill() # backward fill
+        for ph in ['A','B','C']:
+            df['clean_nrg'+ph] = np.nan
+            df['clean_nrg'+ph].iloc[-3] = device_info['clean_nrg'+ph]#[-2]
+            df['clean_nrg'+ph].iloc[-2] = device_info['clean_nrg'+ph]+device_info['diff_clean_nrg'+ph]
+            df['clean_nrg'+ph].iloc[-1] = device_info['clean_nrg'+ph]+2*device_info['diff_clean_nrg'+ph]
         
+        df = df.sort_index(ascending=False)
+        for i in range(3, len(df)):
+            for ph in ['A','B','C']:
+                df['clean_nrg'+ph].iloc[i] = device_info['clean_nrg'+ph]-(i-2)*device_info['diff_clean_nrg'+ph]
+            
+        df = df.sort_index()
         legadict = legacy_info(df, device, legadict)
            
     return df,legadict
  
 
 
-def create_virtual(vrtl, cleaned, operation):
+def create_virtual(vrtl, cleaned, operation, historic):
     """
     Creates a virtual DataFrame by aggregating data from multiple devices.
     """
@@ -319,20 +282,18 @@ def create_virtual(vrtl, cleaned, operation):
     #try:
     if operation<2: # add or sub
         for submeter in vrtl:
-            
             df = cleaned[submeter]
+
             if not df.empty:
                 if not agg.empty:
                     if operation == 1:
-                        agg = agg.add(df, fill_value=0)
+                        agg = agg.add(df)
                     else:
-                        agg = agg.sub(df, fill_value=0)                        
+                        agg = agg.sub(df)                        
                 else:
                     agg = df
-                
             else:
                 return pd.DataFrame([])
-        agg['totalCleanNrg'] = agg['clean_nrgA']+agg['clean_nrgB']+agg['clean_nrgC']
     else:
 
         
@@ -349,11 +310,26 @@ def create_virtual(vrtl, cleaned, operation):
         totalFreeze = totalFreeze[['Freezer']]
 
         
-        
+        # First calculate deltas, then calculate complex freezer
         if (not agg.empty) and (not totalAC.empty) and (not totalFreeze.empty):
             agg = pd.concat([agg, totalAC, totalFreeze],axis=1)
-            agg['totalCleanNrg'] = (agg['unitAC']/agg['AC'])*agg['Freezer']
-                        
+            agg['delta_unitAC'] = agg['unitAC']-agg['unitAC'].shift()
+            agg['delta_AC'] = agg['AC']-agg['AC'].shift()
+            agg['delta_Freezer'] = agg['Freezer']-agg['Freezer'].shift()
+            agg['totalCleanNrg'] = (agg['delta_unitAC']/agg['delta_AC'])*agg['delta_Freezer']
+            
+            # bring historic data to accumulate energy
+            agg = pd.concat([historic, agg], axis=1)
+            agg['test'] = agg['totalCleanNrg']
+            agg.loc[agg['historicNrg'].notna(),'test'] = np.nan
+            for i in range(1,len(agg)):
+                if np.isnan(agg['historicNrg'].iloc[i] ):
+                    agg['historicNrg'].iloc[i] = agg['historicNrg'].iloc[i-1]+agg['test'].iloc[i]
+            agg = agg.drop(['test','totalCleanNrg'], axis=1)
+            agg = agg.rename(columns={'historicNrg':'totalCleanNrg'})
+            print('after concatenation with historic:',agg)
+            # agg['totalCleanNrg'] = agg['totalCleanNrg'].cumsum()
+
             # agg = df.copy()
             # agg = agg.div(totalAC)
             # agg = agg.mul(totalFreeze)
@@ -362,8 +338,8 @@ def create_virtual(vrtl, cleaned, operation):
             agg['clean_nrgB'] = agg['totalCleanNrg']/3
             agg['clean_nrgC'] = agg['totalCleanNrg']/3
             
-            agg = agg[['clean_nrgA','clean_nrgB','clean_nrgC','totalCleanNrg']]
-            
+            agg = agg[['clean_nrgA','clean_nrgB','clean_nrgC']]
+            print('ready df:',agg)
             # agg = agg.drop('totalCleanNrg',axis=1)
             
         else:
@@ -386,7 +362,7 @@ def create_virtual_diff(vrtl, cleaned):
     df2['totalCleanNrg'] = df2['clean_nrgA']+df2['clean_nrgB']+df2['clean_nrgC']
     agg = df1[['totalCleanNrg']].copy()
     
-    agg = agg.sub(df2[['totalCleanNrg']], fill_value=0)
+    agg = agg.sub(df2[['totalCleanNrg']])
     
     agg['clean_nrgA'] = agg['totalCleanNrg']/3
     agg['clean_nrgB'] = agg['totalCleanNrg']/3
@@ -416,9 +392,8 @@ def send_data(mydf, device, entity):
             df[col] = df[col].bfill()
             
     df['totalCleanNrg'] = df['clean_nrgA']+df['clean_nrgB']+df['clean_nrgC']
-    # df = df.iloc[1:] # --> not necessary anymore
-    # df = df.iloc[:-1] # remove current day's measurement until noon --> not necessary anymore
-
+    df = df.iloc[1:]
+    df = df.iloc[:-1] # remove current day's measurement until noon
     # df = df.tail(1) # write only energy of the previous day
     print('yesterdays value to write:', df)
     
@@ -451,26 +426,8 @@ def send_data(mydf, device, entity):
 
     #except Exception as e:
     #    print(f"Error sending data for device {device}: {e}")
-    
-def store_primitive_cleaned(cleaned):
-    # Initialize an empty dataframe to store the combined data
-    combined_sums = pd.DataFrame()
-    # copied_dict = copy.deepcopy(cleaned)
-    copied_dict = cleaned.copy()
-    # Iterate through the dictionary
-    for name, mydf in copied_dict.items():
-        # Calculate the sum of columns A, B, C elementwise
-        mydf['Sum'] = mydf[['clean_nrgA', 'clean_nrgB', 'clean_nrgC']].sum(axis=1)
-        mydf['Date'] = mydf.index.astype(str)
-        
-        # Add the 'Sum' column to the combined_sums dataframe
-        combined_sums[name] = mydf['Sum']
-    combined_sums['Date'] = mydf['Date']
-    # Save the combined dataframe to an Excel file
-    combined_sums.to_excel('combined_sums.xlsx', index=False)
-    del combined_sums
+     
 
- 
 def main():
     
     # load meter info
@@ -502,9 +459,9 @@ def main():
     end_time = end_time - datetime.timedelta(hours=end_time.hour, minutes=end_time.minute, seconds=end_time.second,
                                                     microseconds=end_time.microsecond)
     
-    start_time = end_time +relativedelta(days=-5)
-    # start_time = start_time + datetime.timedelta(hours=13)
-    # end_time = end_time + datetime.timedelta(hours=13)
+    start_time = end_time +relativedelta(days=-8)
+    start_time = start_time + datetime.timedelta(hours=13)
+    end_time = end_time + datetime.timedelta(hours=13)
     
     # convert datetime to unix timestamp
     start_time = str(int(start_time.timestamp()) * 1000)
@@ -523,75 +480,76 @@ def main():
     #     end_time = end_time + datetime.timedelta(hours=13)
     #     end_time = str(int((end_time ).timestamp() * 1000))
     #     start_time = str(int((start_time ).timestamp() * 1000))
-    start_time = '1719781200000' 
-    end_time = '1721422800000'
-
+    # start_time = '1706785200000' 
+    # end_time = '1721286000000'
+    # end_time = '1709290800000'
     
- 
+
     print(start_time,end_time)
     
     # iterate over physical meters to clean energy values
     for meter in physical_meters:
-        print(meter)
+        # print(meter)
         [df, legadict] = read_data(meter, acc_token, start_time, end_time,descriptors, legadict, 'device')
         cleaned[meter] = df
-        
     
-
+    
     # Write the data to the file
+    filename = 'meters_info.json'
     with open('legacy_info.json', 'w', encoding='utf-8') as file:
-        json.dump(legadict, file, ensure_ascii=False, indent=4, default=convert_timestamp)
-
-    
+        json.dump(legadict, file, ensure_ascii=False, indent=4)
 
     # iterate over meters
     for virtualName,submeters in virtualMeters.items():
         print(virtualName)
         if virtualName in subtract_meters:
-            
+            print('SUBTRACTING')
             agg = create_virtual_diff(submeters, cleaned)
-        elif virtualName in complex_calc_meters:            
+        elif virtualName in complex_calc_meters:
+            vrtl_desc = 'totalCleanNrg'
+            vrtl_fr = read_virtual_data(virtualName, acc_token, start_time, end_time, vrtl_desc, 'device')
+            
             operation = 2 # div then mul
-            agg = create_virtual(submeters, cleaned, operation)
+            agg = create_virtual(submeters, cleaned, operation, vrtl_fr)
         else:
             operation=1 #add
-            agg = create_virtual(submeters, cleaned, operation)
+            agg = create_virtual(submeters, cleaned, operation, {})
 
-        print(agg)
+        
         
         if not agg.empty:
             cleaned[virtualName] = agg
-
-    store_primitive_cleaned(cleaned)
+        # agg = postproc(agg, virtualName)
+        #send_data(agg,virtualName, address)
         
     
-    # # Create list of meters (physical+virtual) whose telemetry will be stored in TB
-    # lst = [value for value in list(cleaned.keys()) if value not in unwriteable]
-    # filtered = {key: cleaned[key] for key in lst if key in cleaned}
+    # Create list of meters (physical+virtual) whose telemetry will be stored in TB
+    lst = [value for value in list(cleaned.keys()) if value not in unwriteable]
+    filtered = {key: cleaned[key] for key in lst if key in cleaned}
     
-    # # write telemetry
-    # for key,data in filtered.items():
+    # write telemetry
+    for key,data in filtered.items():
     
-    #     if key in assetdevs:
-    #         entity = 'ASSET'
-    #         # send_data(data, key, entity)
-    #     else:
-    #         entity = 'DEVICE'
-    #     #print(key, entity, data.head())
-    #     send_data(data, key, entity)
+        if key in assetdevs:
+            entity = 'ASSET'
+            # send_data(data, key, entity)
+        else:
+            entity = 'DEVICE'
+        #print(key, entity, data.head())
+        send_data(data, key, entity)
             
-    # #     if key in ['VIRTUAL METER 41 - ΛΟΙΠΑ ΦΟΡΤΙΑ ΕΓΚΑΤΑΣΤΑΣΗΣ','Λοιπά Φορτία Eγκατάστασης','Υποσύνολο','Κέντρο Ερευνας & Τεχνολογίας (ΚΕΤ)',"Virtual Meter 36 - ΚΑΤΑΝΑΛΩΣΗ ΨΥΚΤΩΝ ΚΕΤ",
-    # #     "Virtual Meter 37 - ΚΑΤΑΝΑΛΩΣΗ ΨΥΚΤΩΝ ΑΜΦΙΘΕΑΤΡΟ",
-    # #     "Virtual Meter 38 - ΚΑΤΑΝΑΛΩΣΗ ΨΥΚΤΩΝ ΑΙΘ. ΔΙΑΛΕΞΕΩΝ  Α' ΟΡΟΦΟΣ",
-    # #     "Virtual Meter 39 - ΚΑΤΑΝΑΛΩΣΗ ΨΥΚΤΩΝ U-TECH LAB",
-    # #     "Virtual Meter 40 - ΚΑΤΑΝΑΛΩΣΗ ΨΥΚΤΩΝ ΒΙΒΛΙΟΘΗΚΗΣ",
-    # #     "Κέντρο Ερευνας & Τεχνολογίας (ΚΕΤ)",
-    # #     "Αμφιθέατρο",
-    # #     "Αίθουσα Διαλέξεων",
-    # #     "U - TECH LAB",
-    # #     "Βιβλιοθήκη"]:
-    # #         print(key, entity, data.head(10))
-    # #         send_data(data, key, entity)
+    #     if key in ['VIRTUAL METER 41 - ΛΟΙΠΑ ΦΟΡΤΙΑ ΕΓΚΑΤΑΣΤΑΣΗΣ','Λοιπά Φορτία Eγκατάστασης','Υποσύνολο','Κέντρο Ερευνας & Τεχνολογίας (ΚΕΤ)',"Virtual Meter 36 - ΚΑΤΑΝΑΛΩΣΗ ΨΥΚΤΩΝ ΚΕΤ",
+    #     "Virtual Meter 37 - ΚΑΤΑΝΑΛΩΣΗ ΨΥΚΤΩΝ ΑΜΦΙΘΕΑΤΡΟ",
+    #     "Virtual Meter 38 - ΚΑΤΑΝΑΛΩΣΗ ΨΥΚΤΩΝ ΑΙΘ. ΔΙΑΛΕΞΕΩΝ  Α' ΟΡΟΦΟΣ",
+    #     "Virtual Meter 39 - ΚΑΤΑΝΑΛΩΣΗ ΨΥΚΤΩΝ U-TECH LAB",
+    #     "Virtual Meter 40 - ΚΑΤΑΝΑΛΩΣΗ ΨΥΚΤΩΝ ΒΙΒΛΙΟΘΗΚΗΣ",
+    #     "Κέντρο Ερευνας & Τεχνολογίας (ΚΕΤ)",
+    #     "Αμφιθέατρο",
+    #     "Αίθουσα Διαλέξεων",
+    #     "U - TECH LAB",
+    #     "Βιβλιοθήκη"]:
+    #         print(key, entity, data.head(10))
+    #         send_data(data, key, entity)
         
     
      
