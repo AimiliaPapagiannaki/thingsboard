@@ -246,18 +246,22 @@ def read_data(device, acc_token, start_time, end_time, descriptors, legadict, en
         df = tmp1.copy()
         df = align_resample(df)
         df = df.resample('1D', label='left').sum()
+        keep_index = df.index
         
         # Create a DataFrame with the timestamp as the index
         tmpdf = pd.DataFrame(device_info, index=['ts'])
         tmpdf['ts'] = pd.to_datetime(tmpdf['ts'])
+        tmpdf['ts'] = tmpdf['ts'].dt.tz_convert('Europe/Athens')
         # Set the 'timestamp' column as the index
         tmpdf.set_index('ts', inplace=True)
-        
+         
         # Create a DataFrame with the timestamp as the index
         df = pd.concat([df, tmpdf], axis=1)
+        print('CONCAT:',df)
         df = df.ffill() # forward fill
         df = df.bfill() # backward fill
-        
+        df = df.loc[keep_index]
+        print('AFTER INDEXING',df)
         legadict = legacy_info(df, device, legadict)
            
     return df,legadict
@@ -366,7 +370,7 @@ def send_data(mydf, device, entity):
         df['totalCleanNrg'] = df['clean_nrgA']+df['clean_nrgB']+df['clean_nrgC']
     
 
-    # df = df.tail(1) # write only energy of the previous day
+    df = df.tail(1) # write only energy of the previous day
     # print('yesterdays value to write:', df)
     
     df = df.dropna()
@@ -459,20 +463,20 @@ def main():
     start_time = str(int(start_time.timestamp()) * 1000)
     end_time = str(int(end_time.timestamp()) * 1000)
     
-    month = 7
+    # month = 7
     year = 2024
-    # for month in [3,4,5,6]:
+    # for month in [4,5,6]:
     #     start_time = datetime.datetime(year = year, month=month, day=1)
     #     end_time = start_time + relativedelta(months=1)
     #     tmzn = pytz.timezone('Europe/Athens')    
     #     end_time = tmzn.localize(end_time)
     #     start_time = tmzn.localize(start_time)
-    #     start_time = start_time +relativedelta(days=-1)
+    #     # start_time = start_time +relativedelta(days=-1)
         
     #     end_time = str(int((end_time ).timestamp() * 1000))
     #     start_time = str(int((start_time ).timestamp() * 1000))
-    start_time = '1719781200000' 
-    end_time = '1721854800000'
+    # start_time = '1719781200000' 
+    # end_time = '1721854800000'
 
     
  
@@ -510,7 +514,7 @@ def main():
         if not agg.empty:
             cleaned[virtualName] = agg
 
-    store_primitive_cleaned(cleaned, month, year)
+    # store_primitive_cleaned(cleaned, month, year)
         
     
     # Create list of meters (physical+virtual) whose telemetry will be stored in TB
@@ -519,14 +523,14 @@ def main():
     
     # write telemetry
     for key,data in filtered.items():
-    
+        
         if key in assetdevs:
             entity = 'ASSET'
             # send_data(data, key, entity)
         else:
             entity = 'DEVICE'
         #print(key, entity, data.head())
-        # send_data(data, key, entity)
+        send_data(data, key, entity)
         
         
      
