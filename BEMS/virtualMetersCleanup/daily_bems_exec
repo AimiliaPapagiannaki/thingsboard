@@ -1,0 +1,3 @@
+#!/bin/bash
+
+python3 /home/azureuser/BEMS/bems_creation.py &>> /home/azureuser/BEMS/logfile.txt
