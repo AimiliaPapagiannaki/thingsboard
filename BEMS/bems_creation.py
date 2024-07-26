@@ -379,7 +379,7 @@ def send_data(mydf, device, entity):
         return
     
     #try:
-    #print(device, df)
+    print(device, df)
     # transform ts and write telemetry
     df['ts'] = df.index
     df['ts'] = df.apply(lambda row: int(row['ts'].timestamp()) * 1000, axis=1)
@@ -509,7 +509,7 @@ def main():
             operation=1 #add
             agg = create_virtual(submeters, cleaned, operation)
 
-        print(agg)
+        #print(agg)
         
         if not agg.empty:
             cleaned[virtualName] = agg

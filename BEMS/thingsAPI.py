@@ -33,6 +33,7 @@ def get_devid(address, device,entity):
             'X-Authorization': acc_token
         }
     )
+    
     return response.json()['id']['id']
     
 
@@ -58,7 +59,7 @@ def send_telemetry(address, device, my_json, entity):
     acc_token = get_access_token(address)
     devid = get_devid(address, device, entity.lower())
     
-    requests.post(
+    r = requests.post(
         url=f"{address}/api/plugins/telemetry/{entity}/{devid}/timeseries/SERVER_SCOPE",
         data=my_json,
         headers={
@@ -67,6 +68,8 @@ def send_telemetry(address, device, my_json, entity):
             'X-Authorization': acc_token
         }
     )
+    #print('POST REQUEST:',r.status_code)
+    
 
     
 def send_attr(address, devid, mydict):
