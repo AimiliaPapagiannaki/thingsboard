@@ -35,10 +35,10 @@ def main():
     raw_data = data_fetch.retrieve_raw(config.DATA_URL, start_time, end_time, tmzn)
 
     # Step 2: Preprocess data
-    [pwr_data, energy_data] = data_preprocess.preprocess_data(raw_data)
+    [pwr_data, daily_loads, daily_rooms, monthly_rooms] = data_preprocess.preprocess_data(raw_data)
 
     # Step 3: Generate plots
-    plot_generation(pwr_data, energy_data, config.OUTPUT_DIR)
+    plot_generation.create_plots(pwr_data, daily_loads, daily_rooms, monthly_rooms, config.OUTPUT_DIR)
     
     # # Step 4: Create PDF report
     # pdf_creation.create_pdf_report(config.OUTPUT_DIR)
