@@ -18,7 +18,7 @@ def preprocess_data(raw):
     energy_data.rename(columns={'102.402.002072':'Γενικός διακόπτης'}, inplace=True)
     energy_data = energy_data/1000
 
-    daily_loads = energy_data[['ΚΛΙΜΑΤΙΣΜΟΣ','ΦΩΤΙΣΜΟΣ']].copy()
+    # daily_loads = energy_data[['ΚΛΙΜΑΤΙΣΜΟΣ','ΦΩΤΙΣΜΟΣ']].copy()
     daily_rooms = energy_data.drop(['ΚΛΙΜΑΤΙΣΜΟΣ','ΦΩΤΙΣΜΟΣ'],axis=1).copy()
 
     monthly_rooms = daily_rooms.copy().resample('1M').sum()
@@ -27,4 +27,4 @@ def preprocess_data(raw):
 
     print('monthly sum of rooms:', monthly_rooms)
 
-    return pwr_data, daily_loads, daily_rooms, monthly_rooms
+    return pwr_data, energy_data, monthly_rooms
