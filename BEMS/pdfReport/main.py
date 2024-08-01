@@ -23,22 +23,31 @@ def main():
     year = newts.year
 
     startm = datetime.datetime(year = year, month=month, day=1)
-    endm = startm + relativedelta(months=1)
+    endm =  startm + relativedelta(months=1)
+
+    endm2 = startm
+    startm2 = endm2 + relativedelta(months=-1)
     
     tmzn = pytz.timezone('Europe/Athens')    
     endm = tmzn.localize(endm)
     startm = tmzn.localize(startm)
+
+    endm2 = tmzn.localize(endm2)
+    startm2 = tmzn.localize(startm2)
     
     end_time = str(int((endm ).timestamp() * 1000))
     start_time = str(int((startm ).timestamp() * 1000))
+
+    end_time2 = str(int((endm2).timestamp() * 1000))
+    start_time2 = str(int((startm2).timestamp() * 1000))
     # Step 1: Fetch data
-    raw_data = data_fetch.retrieve_raw(config.DATA_URL, start_time, end_time, tmzn)
+    [raw_data, prev_data] = data_fetch.retrieve_raw(config.DATA_URL, start_time, end_time, tmzn, start_time2, end_time2)
 
     # Step 2: Preprocess data
-    [pwr_data, daily_rooms, monthly_rooms] = data_preprocess.preprocess_data(raw_data)
+    [cnrg_data, pwr_data, daily_rooms, monthly_rooms] = data_preprocess.preprocess_data(raw_data)
 
     # Step 3: Generate plots
-    plot_generation.create_plots(pwr_data, daily_rooms, monthly_rooms, config.OUTPUT_DIR)
+    plot_generation.create_plots(cnrg_data, pwr_data, prev_data, daily_rooms, monthly_rooms, config.OUTPUT_DIR)
     
     # # Step 4: Create PDF report
     # pdf_creation.create_pdf_report(config.OUTPUT_DIR)

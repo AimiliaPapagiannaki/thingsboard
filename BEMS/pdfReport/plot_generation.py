@@ -16,16 +16,16 @@ def create_pwr_table(df, output_dir):
     df.loc[df['totalpwr']<0, 'totalpwr'] = 0
     
     stats = {}
-    stats['Maximum active power (kW)'] = df['totalpwr'].max()
-    stats['Minimum active power (kW)'] = df['totalpwr'].min()
-    stats['Average active power (kW)'] = df['totalpwr'].mean()
-    stats_df = pd.DataFrame(list(stats.items()), columns=['Statistic', 'Value'])
+    stats['Μέγιστη ισχύς (kW)'] = df['totalpwr'].max()
+    stats['Ελάχιστη ισχύς (kW)'] = df['totalpwr'].min()
+    stats['Μέση ισχύς (kW)'] = df['totalpwr'].mean()
+    stats_df = pd.DataFrame(list(stats.items()), columns=['Στατιστικό μέτρο', 'Τιμή'])
 
 
     df2 = df.resample('1H').max()
     df2 = df2.dropna()
     df2 = df2.sort_values(by='totalpwr', ascending=False)
-    df2 = df2.rename(columns={'totalpwr':'Active power (kW)'})
+    df2 = df2.rename(columns={'totalpwr':'Ενεργός ισχύς (kW)'})
     df2 = df2.iloc[:10]
     df2['Ημ/νία'] = df2.index
     df2  = df2.reset_index(drop=True)
@@ -41,7 +41,7 @@ def create_pwr_table(df, output_dir):
                 colLabels=stats_df.columns,
                 loc='center', cellLoc='center',
                 colLoc='center',
-                colColours=['lightskyblue', 'lightskyblue'],
+                colColours=['skyblue', 'skyblue'],
                 colWidths=[0.5 for x in stats_df.columns])
     t1.auto_set_font_size(True)
     t1.auto_set_column_width(col=list(range(len(stats_df.columns))))
@@ -61,7 +61,7 @@ def create_pwr_table(df, output_dir):
                 colLabels=df2.columns,
                 loc='center', cellLoc='center',
                 colLoc='center',
-                colColours=['lightskyblue', 'lightskyblue', 'lightskyblue'],
+                colColours=['skyblue', 'skyblue', 'skyblue'],
                 colWidths=[0.5 for x in df2.columns])
     t2.auto_set_font_size(True)
     t2.auto_set_column_width(col=list(range(len(df2.columns))))
@@ -85,8 +85,8 @@ def create_pwr_table(df, output_dir):
 def create_table(df, output_dir, specific_loads=None):
     df_filtered = df.copy()
     total_load = df_filtered.loc['Γενικός διακόπτης', 'Energy consumption (kWh)']
-    df_filtered['Percentage (%)'] = (df['Energy consumption (kWh)'] / total_load) * 100
-    df_filtered['Room'] = df_filtered.index
+    df_filtered['Ποσοστό %'] = (df['Energy consumption (kWh)'] / total_load) * 100
+    df_filtered['Δομική ενότητα'] = df_filtered.index
 
     if specific_loads:
         df_specific = df_filtered.loc[specific_loads + ['Γενικός διακόπτης']]
@@ -98,7 +98,7 @@ def create_table(df, output_dir, specific_loads=None):
         df_specific = df_filtered
 
 
-    df_specific  = df_specific.sort_values(by='Percentage (%)', ascending=False)
+    df_specific  = df_specific.sort_values(by='Ποσοστό %', ascending=False)
     df_specific  = df_specific.reset_index(drop=True)
 
     # reorder columns
@@ -178,7 +178,7 @@ def create_pie(df, output_dir, specific_loads=None):
         else:
             autotext.set_fontsize(8)  # Set default font size for other percentages
 
-    ax.legend(wedges, df_specific.index, title="Loads", loc="center left", bbox_to_anchor=(1, 0, 0.5, 1))
+    ax.legend(wedges, df_specific.index, title="Δομικές ενότητες", loc="center left", bbox_to_anchor=(1, 0, 0.5, 1))
 
     pie_title = 'PieChart Πλανηταρίου/Αμφιθεάτρου/Λοιπών Φορτίων' if specific_loads else 'PieChart χώρων Ευγενιδείου'
     ax.set_title(pie_title, fontsize=14)
@@ -188,11 +188,137 @@ def create_pie(df, output_dir, specific_loads=None):
     file_name = 'pie_specific.png' if specific_loads else 'pie_total.png'
     fig.savefig(output_dir+file_name,dpi=150,bbox_inches='tight')
 
-def create_line_plot():
-    '''Line plot'''
 
-def create_bar_plot(df, output_dir):
+def create_line_plot_pwr(df, output_dir, monthdict):
+    month = monthdict[calendar.month_name[df.index[0].month]]
+
+    '''Line plot for min/max/mean power'''
+    mindf = df.resample('1H').min().rename(columns={'totalpwr':'Minimum power (kW)'})
+    mindf = mindf.resample('1D').min()
+
+    maxdf = df.resample('1H').max().rename(columns={'totalpwr':'Maximum power (kW)'})
+    maxdf = maxdf.resample('1D').max()
+
+    avgdf = df.resample('1H').mean().rename(columns={'totalpwr':'Average power (kW)'})
+    avgdf = avgdf.resample('1D').mean()
+
+    avg_df = pd.concat([avgdf, mindf, maxdf], axis=1)
+    
+    # Define the plot
+    fig, ax = plt.subplots(figsize=(10, 6))
+    # Plot each line with different colors and markers
+    ax.plot(avg_df.index.day, avg_df['Minimum power (kW)'], label='Ελάχιστη', color='yellowgreen', marker='o', linestyle='-', markersize=8)
+    ax.plot(avg_df.index.day, avg_df['Maximum power (kW)'], label='Μέγιστη', color='brown', marker='s', linestyle='--', markersize=8)
+    ax.plot(avg_df.index.day, avg_df['Average power (kW)'], label='Μέση', color='royalblue', marker='^', linestyle='-.', markersize=8)
+
+    # Add a legend
+    ax.legend()
+
+    # Add labels and title
+    # ax.set_xlabel('Ημέρες')
+    ax.set_ylabel('Ενεργός ισχύς (kW)')
+    ax.set_title('Ημερήσια μέση, ελάχιστη, μέγιστη ισχύς ('+month+')')
+    plt.xticks(avg_df.index.day)
+    # Save the figure
+    
+    file_name = 'line_power.png'
+    fig.savefig(output_dir+file_name, dpi=150, bbox_inches='tight')
+
+
+def create_bar_plot(df, output_dir, monthdict):
     '''Bar plot'''
+    
+
+    month = monthdict[calendar.month_name[df.index[0].month]]
+
+    colorlist = ['mediumseagreen','royalblue','olivedrab','chocolate','darkmagenta']
+    i=0
+    for room in ['Γενικός διακόπτης','Πλανητάριο','Αμφιθέατρο','ΚΛΙΜΑΤΙΣΜΟΣ','ΦΩΤΙΣΜΟΣ']:
+
+        fig, ax = plt.subplots(figsize=(7.5, 5.0))
+        plt.bar(df.index.day, df[room],color=colorlist[i])
+        # plt.xlabel('Days of month')
+        plt.ylabel('Κατανάλωση ενέργειας (kWh)')
+        plt.xticks(df.index.day)
+        plt.title(room.capitalize()+': Ημερήσια κατανάλωση ('+month+')',fontsize=16)
+        fig.tight_layout()
+        fig.savefig(output_dir+'bar_daily_'+room.capitalize()+'.png',dpi=150)
+
+        i += 1
+    return month
+    
+def create_heatmap(df, output_dir):
+    df = df/1000
+    #  Reshape the data to have days as rows and hours as columns
+    df['Ημέρες'] = df.index.day
+    df['Ώρες'] = df.index.hour
+    pivot_df = df.pivot_table(values='totalcnrg', index='Ώρες', columns='Ημέρες')
+    # Ensure hours are sorted in ascending order
+    pivot_df = pivot_df.sort_index(axis=0, ascending=False)
+
+    # Create the heatmap
+    plt.figure(figsize=(8, 6.5))
+    sns.heatmap(pivot_df, cmap='YlGnBu', cbar_kws={'label': 'Ενέργεια (kWh)'})
+
+    # Add labels and title
+    plt.ylabel('Ώρες',fontsize=12)
+    plt.xlabel('Ημέρες',fontsize=12)
+    plt.title('Heatmap κατανάλωσης ενέργειας', fontsize=14)
+    
+    # Set the y-axis tick labels to be non-rotated
+    plt.xticks(fontsize=10)
+    plt.yticks(fontsize=10,rotation=0)
+    # Save the figure
+    plt.savefig(output_dir+'heatmap.png', dpi=150, bbox_inches='tight')
+
+def create_2month_barplot(prev, curr, output_dir, monthdict):
+    month_prev = prev.index[0].month
+    month_curr = curr.index[0].month
+    prev['totalCleanNrg'] = prev['totalCleanNrg']/1000 # previous month
+    prev['day'] = prev.index.day
+    prev.set_index('day', inplace=True, drop=True)
+    curr = curr.to_frame()
+    curr['day'] = curr.index.day
+    curr.set_index('day', inplace=True, drop=True)    
+    col_prev = 'Ενέργεια kWh ('+monthdict[calendar.month_name[month_prev]]+')'
+    col_curr = 'Ενέργεια kWh ('+monthdict[calendar.month_name[month_curr]]+')'
+    prev = prev.rename(columns={'totalCleanNrg':col_prev})
+    curr = curr.rename(columns={'Γενικός διακόπτης':col_curr})
+    prev = pd.concat([prev,curr], axis=1)
+
+    # Number of categories
+    n = len(prev)
+
+    # The x locations for the groups
+    ind = prev.index
+
+    # The width of the bars
+    width = 0.35
+
+    fig, ax = plt.subplots(figsize=(7.5,5))
+
+    # Plot bars for Value1
+    bars1 = ax.bar(ind - width/2, prev[col_prev], width, label=monthdict[calendar.month_name[month_prev]], color='royalblue')
+
+    # Plot bars for Value2
+    bars2 = ax.bar(ind + width/2, prev[col_curr], width, label=monthdict[calendar.month_name[month_curr]], color='orange')
+
+    # Add some text for labels, title and custom x-axis tick labels, etc.
+    ax.set_xlabel('Ημέρες')
+    ax.set_ylabel('Ενέργεια (kWh)')
+    ax.set_title('Ημερήσια κατανάλωση των μηνών: '+monthdict[calendar.month_name[month_prev]]+'/'+monthdict[calendar.month_name[month_curr]], fontsize=14)
+    step = 2  # Change this value based on how sparse you want the ticks to be
+    ax.set_xticks(ind[::step])
+    # ax.set_xticklabels(prev.index)
+    ax.legend()
+
+    # Show the plot
+    fig.savefig(output_dir+'bar_compaired.png',dpi=150)
+
+
+
+def create_plots(cnrg_data, pwr_data, prev_data, daily_rooms, monthly_rooms, output_dir):
+
     monthdict = {'January':'Ιανουάριος',
                  'February':'Φεβρουάριος',
                  'March':'Μάρτιος',
@@ -205,30 +331,7 @@ def create_bar_plot(df, output_dir):
                  'October':'Οκτώβριος',
                  'November':'Νοέμβριος',
                  'December':'Δεκέμβριος'}
-
-    month = monthdict[calendar.month_name[df.index[0].month]]
-
-    colorlist = ['mediumseagreen','royalblue','olivedrab','chocolate','darkmagenta']
-    i=0
-    for room in ['Γενικός διακόπτης','Πλανητάριο','Αμφιθέατρο','ΚΛΙΜΑΤΙΣΜΟΣ','ΦΩΤΙΣΜΟΣ']:
-
-        fig, ax = plt.subplots(figsize=(7.5, 5.0))
-        # plt.setp(ax.xaxis.get_majorticklabels())
-        plt.bar(df.index.day, df[room],color=colorlist[i])
-        plt.xlabel('Days of month')
-        plt.ylabel('Energy [kWh]')
-        plt.xticks(df.index.day,rotation=45)
-        plt.title(room.capitalize()+': Ημερήσια κατανάλωση ('+month+')',fontsize=16)
-        fig.tight_layout()
-        fig.savefig(output_dir+'bar_daily_'+room.capitalize()+'.png',dpi=150)
-
-        i += 1
-    return month
     
-
-
-
-def create_plots(pwr_data, daily_rooms, monthly_rooms, output_dir):
     # # Rooms breakdown tables & pie charts
     # specific_loads = ['Πλανητάριο', 'Αμφιθέατρο']
     # create_table(monthly_rooms, output_dir)
@@ -237,8 +340,14 @@ def create_plots(pwr_data, daily_rooms, monthly_rooms, output_dir):
     # create_pie(monthly_rooms, output_dir, specific_loads=specific_loads)
 
     # # Bar charts
-    # create_bar_plot(daily_rooms, output_dir)
+    # create_bar_plot(daily_rooms, output_dir,monthdict)
 
-    # Active power plots
-    create_pwr_table(pwr_data, output_dir)
-    
+    # # Active power plots
+    # create_pwr_table(pwr_data, output_dir)
+    # create_line_plot_pwr(pwr_data, output_dir, monthdict)
+
+    # heatmap
+    create_heatmap(cnrg_data, output_dir)
+
+    # comparative barplot 2 months
+    create_2month_barplot(prev_data, daily_rooms['Γενικός διακόπτης'], output_dir, monthdict)
