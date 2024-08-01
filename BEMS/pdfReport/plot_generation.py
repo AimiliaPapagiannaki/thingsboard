@@ -49,7 +49,7 @@ def create_pwr_table(df, output_dir):
     table_cells = t1.get_children()
     for cell in table_cells:
         cell.set_height(0.08)
-
+ 
     table_title = 'Στατιστικά ισχύος'
     ax1.set_title(table_title, fontsize=14, pad=2)
     t1.auto_set_column_width(col=list(range(len(stats_df.columns))))
