@@ -13,46 +13,74 @@ matplotlib.rcParams['interactive'] = False
 
 
 def create_pwr_table(df, output_dir):
-    df_filtered = df.copy()
-    df_filtered['Room'] = df_filtered.index
-
-    df_specific = df_filtered
-
-    df_specific  = df_specific.sort_values(by='Percentage (%)', ascending=False)
-    df_specific  = df_specific.reset_index(drop=True)
-
-    # Determine figure size based on number of rows
-    num_rows = len(df_specific)
-    fig_height = 0.6 * num_rows + 2  # Adjust the multiplier and base value as needed
+    df.loc[df['totalpwr']<0, 'totalpwr'] = 0
+    
+    stats = {}
+    stats['Maximum active power (kW)'] = df['totalpwr'].max()
+    stats['Minimum active power (kW)'] = df['totalpwr'].min()
+    stats['Average active power (kW)'] = df['totalpwr'].mean()
+    stats_df = pd.DataFrame(list(stats.items()), columns=['Statistic', 'Value'])
 
 
-    # Create a table figure
-    # fig = plt.figure(figsize=(7,12))
+    df2 = df.resample('1H').max()
+    df2 = df2.dropna()
+    df2 = df2.sort_values(by='totalpwr', ascending=False)
+    df2 = df2.rename(columns={'totalpwr':'Active power (kW)'})
+    df2 = df2.iloc[:10]
+    df2['Ημ/νία'] = df2.index
+    df2  = df2.reset_index(drop=True)
+
+    # Define figure size
+    fig_height = 6
     fig = plt.figure(figsize=(7, fig_height))
-    ax1 = plt.subplot(111, aspect='equal')
+
+    # Create the first subplot
+    ax1 = plt.subplot(211, aspect='equal')
     ax1.axis('off')
-    t= ax1.table(cellText=df_specific.round(decimals=2).values, 
-                 colLabels=df_specific.columns,  
-                 loc='center',cellLoc ='center', 
-                 colLoc='center', 
-                #  colColours=['tab:gray','mediumseagreen','mediumseagreen'],
-                 colColours=['tab:gray','tab:gray','tab:gray'],
-                 colWidths=[0.5 for x in df_specific.columns])
-    t.auto_set_font_size(False) 
-    t.auto_set_column_width(col=list(range(len(df_specific.columns))))
-    
-    
-    table_cells = t.get_children()
-    for cell in table_cells: cell.set_height(0.07)
-    
-    table_title = 'Κατανάλωση Πλανηταρίου/Αμφιθεάτρου' if specific_loads else 'Κατανάλωση χώρων Ευγενιδείου'
-    ax1.set_title(table_title,fontsize=14, pad=20)
-    t.auto_set_column_width(col=list(range(len(df_specific.columns))))
-    
-    file_name = 'table_specific_rooms_breakdown.png' if specific_loads else 'table_rooms_breakdown.png'
+    t1 = ax1.table(cellText=stats_df.round(decimals=2).values,
+                colLabels=stats_df.columns,
+                loc='center', cellLoc='center',
+                colLoc='center',
+                colColours=['lightskyblue', 'lightskyblue'],
+                colWidths=[0.5 for x in stats_df.columns])
+    t1.auto_set_font_size(True)
+    t1.auto_set_column_width(col=list(range(len(stats_df.columns))))
+
+    table_cells = t1.get_children()
+    for cell in table_cells:
+        cell.set_height(0.08)
+
+    table_title = 'Στατιστικά ισχύος'
+    ax1.set_title(table_title, fontsize=14, pad=2)
+    t1.auto_set_column_width(col=list(range(len(stats_df.columns))))
+
+    # Create the second subplot
+    ax2 = plt.subplot(212, aspect='equal')
+    ax2.axis('off')
+    t2 = ax2.table(cellText=df2.round(decimals=2).values,
+                colLabels=df2.columns,
+                loc='center', cellLoc='center',
+                colLoc='center',
+                colColours=['lightskyblue', 'lightskyblue', 'lightskyblue'],
+                colWidths=[0.5 for x in df2.columns])
+    t2.auto_set_font_size(True)
+    t2.auto_set_column_width(col=list(range(len(df2.columns))))
+
+    table_cells = t2.get_children()
+    for cell in table_cells:
+        cell.set_height(0.08)
+
+    table_title = 'Μέγιστες τιμές ισχύος (kW)'
+    ax2.set_title(table_title, fontsize=14, pad=10)
+
+    # Adjust spacing between subplots
+    plt.subplots_adjust(hspace=0.1)
+
+    # Save the figure
+    file_name = 'table_10maxpwr.png'
     fig.savefig(output_dir+file_name, dpi=150, bbox_inches='tight', pad_inches=1)
 
-
+    
 
 def create_table(df, output_dir, specific_loads=None):
     df_filtered = df.copy()
@@ -201,15 +229,16 @@ def create_bar_plot(df, output_dir):
 
 
 def create_plots(pwr_data, daily_rooms, monthly_rooms, output_dir):
-    # Rooms breakdown tables & pie charts
-    specific_loads = ['Πλανητάριο', 'Αμφιθέατρο']
-    create_table(monthly_rooms, output_dir)
-    create_table(monthly_rooms, output_dir, specific_loads=specific_loads)
-    create_pie(monthly_rooms, output_dir)
-    create_pie(monthly_rooms, output_dir, specific_loads=specific_loads)
+    # # Rooms breakdown tables & pie charts
+    # specific_loads = ['Πλανητάριο', 'Αμφιθέατρο']
+    # create_table(monthly_rooms, output_dir)
+    # create_table(monthly_rooms, output_dir, specific_loads=specific_loads)
+    # create_pie(monthly_rooms, output_dir)
+    # create_pie(monthly_rooms, output_dir, specific_loads=specific_loads)
 
-    # Bar charts
-    create_bar_plot(daily_rooms, output_dir)
+    # # Bar charts
+    # create_bar_plot(daily_rooms, output_dir)
 
     # Active power plots
     create_pwr_table(pwr_data, output_dir)
+    

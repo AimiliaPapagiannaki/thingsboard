@@ -16,7 +16,8 @@ def preprocess_data(raw):
     # Rename the columns to the respective device names
     energy_data.columns = energy_data.columns.get_level_values(0)
     energy_data.rename(columns={'102.402.002072':'Γενικός διακόπτης'}, inplace=True)
-    energy_data = energy_data/1000
+    energy_data = energy_data/1000 # kWh
+    pwr_data = pwr_data/1000 # kW
 
     # daily_loads = energy_data[['ΚΛΙΜΑΤΙΣΜΟΣ','ΦΩΤΙΣΜΟΣ']].copy()
     daily_rooms = energy_data.drop(['ΚΛΙΜΑΤΙΣΜΟΣ','ΦΩΤΙΣΜΟΣ'],axis=1).copy()
