@@ -41,7 +41,7 @@ def main():
     end_time2 = str(int((endm2).timestamp() * 1000))
     start_time2 = str(int((startm2).timestamp() * 1000))
     # Step 1: Fetch data
-    [raw_data, prev_data] = data_fetch.retrieve_raw(config.DATA_URL, start_time, end_time, tmzn, start_time2, end_time2)
+    [raw_data, prev_data, attributes] = data_fetch.retrieve_raw(config.DATA_URL, start_time, end_time, tmzn, start_time2, end_time2)
 
     # Step 2: Preprocess data
     [cnrg_data, pwr_data, daily_rooms, monthly_rooms] = data_preprocess.preprocess_data(raw_data)
@@ -49,7 +49,7 @@ def main():
     # Step 3: Generate plots
     plot_generation.create_plots(cnrg_data, pwr_data, prev_data, daily_rooms, monthly_rooms, config.OUTPUT_DIR)
     
-    # # Step 4: Create PDF report
+    # Step 4: Create PDF report
     # pdf_creation.create_pdf_report(config.OUTPUT_DIR)
     # print(f"PDF report created at {config.OUTPUT_DIR}")
 

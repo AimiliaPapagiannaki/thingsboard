@@ -29,6 +29,15 @@ def get_devid(address, device, entity):
     )
     return response.json()['id']['id']
 
+def get_attr(address, acc_token, devid, attr):
+    r2 = requests.get(
+        url=address + "/api/plugins/telemetry/ASSET/" + devid + "/values/attributes?keys="+attr,
+        headers={'Content-Type': 'application/json', 'Accept': '*/*', 'X-Authorization': acc_token}).json()
+    
+    attr = r2[0]['value']
+
+    return attr
+
 
 def read_data(address, devid, acc_token, start_time, end_time, descriptors, entity, tmzn):
     """
@@ -95,6 +104,11 @@ def retrieve_raw(url, start_time, end_time, tmzn, start_time2, end_time2):
                 'Λοιπά Φορτία Eγκατάστασης']
     devices_subset = listdevs[:3]
     raw_dfs = {}
+
+    buildingid = get_devid(url, 'Eugenides Foundation', 'asset')
+    sqmt = get_attr(url, acc_token, buildingid, 'unitsSquareMeters')
+    print('SquareMeters', sqmt)
+
     for device in listdevs:
         print(device)
         entity = 'device' if (device in devices_subset) else 'asset'
@@ -112,7 +126,7 @@ def retrieve_raw(url, start_time, end_time, tmzn, start_time2, end_time2):
     if not df.empty:
         df['totalCleanNrg'] = np.round(df['totalCleanNrg'],2)
         
-    return raw_dfs, df
+    return raw_dfs, df, sqmt
 
 
     

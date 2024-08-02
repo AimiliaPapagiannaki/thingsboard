@@ -3,13 +3,9 @@ import seaborn as sns
 import pandas as pd
 import numpy as np
 import calendar
-import logging
-import warnings
 import matplotlib
-# Set the logging level to WARNING to suppress informational messages
-logging.getLogger('matplotlib').setLevel(logging.WARNING)
-warnings.filterwarnings("ignore")
-matplotlib.rcParams['interactive'] = False
+
+
 
 
 def create_pwr_table(df, output_dir):
@@ -315,7 +311,56 @@ def create_2month_barplot(prev, curr, output_dir, monthdict):
     # Show the plot
     fig.savefig(output_dir+'bar_compaired.png',dpi=150)
 
+def maxPwrBreakdown(df, output_dir):
+    maxnrg = df['Γενικός διακόπτης'].max()
+    maxdf = df.loc[df['Γενικός διακόπτης']==maxnrg]
+    maxdf = maxdf.drop(['ΚΛΙΜΑΤΙΣΜΟΣ','ΦΩΤΙΣΜΟΣ'],axis=1)
+    maxdate = maxdf.index[0]# index of day with max energy consumption
 
+    maxdf = maxdf.T
+    maxdf.columns = ['Μέση ωριαία ισχύς (kW)']
+    maxdf['Ποσοστό %'] = 100*maxdf/maxnrg
+    maxdf['Μέση ωριαία ισχύς (kW)'] = maxdf['Μέση ωριαία ισχύς (kW)']/24
+    
+    maxdf  = maxdf.sort_values(by='Ποσοστό %', ascending=False)
+    maxdf['Δομική ενότητα'] = maxdf.index
+    maxdf  = maxdf.reset_index(drop=True)
+
+    # reorder columns
+    columns = maxdf.columns.tolist()
+    columns = [columns[-1]] + columns[:-1]
+    maxdf = maxdf[columns]
+
+    # Determine figure size based on number of rows
+    num_rows = len(maxdf)
+    fig_height = 0.6 * num_rows + 2  # Adjust the multiplier and base value as needed
+
+
+    # Create a table figure
+    fig = plt.figure(figsize=(7, fig_height))
+    ax1 = plt.subplot(111, aspect='equal')
+    ax1.axis('off')
+    t= ax1.table(cellText=maxdf.round(decimals=2).values, 
+                 colLabels=maxdf.columns,  
+                 loc='center',cellLoc ='center', 
+                 colLoc='center', 
+                #  colColours=['tab:gray','mediumseagreen','mediumseagreen'],
+                 colColours=['chocolate','chocolate','chocolate'],
+                 colWidths=[0.5 for x in maxdf.columns])
+    t.auto_set_font_size(False) 
+    t.auto_set_column_width(col=list(range(len(maxdf.columns))))
+    
+    
+    table_cells = t.get_children()
+    for cell in table_cells: cell.set_height(0.07)
+
+    date_str = maxdate.strftime('%Y-%m-%d')
+    table_title = 'Επιμερισμός φορτίων στις '+date_str+', Ημερήσια κατανάλωση:'+str(maxnrg)+' kWh' 
+    ax1.set_title(table_title,fontsize=14, pad=20)
+    t.auto_set_column_width(col=list(range(len(maxdf.columns))))
+    
+    file_name = 'table_maxnrg_split.png' 
+    fig.savefig(output_dir+file_name, dpi=150, bbox_inches='tight', pad_inches=1)
 
 def create_plots(cnrg_data, pwr_data, prev_data, daily_rooms, monthly_rooms, output_dir):
 
@@ -347,7 +392,9 @@ def create_plots(cnrg_data, pwr_data, prev_data, daily_rooms, monthly_rooms, out
     # create_line_plot_pwr(pwr_data, output_dir, monthdict)
 
     # heatmap
-    create_heatmap(cnrg_data, output_dir)
+    # create_heatmap(cnrg_data, output_dir)
 
     # comparative barplot 2 months
-    create_2month_barplot(prev_data, daily_rooms['Γενικός διακόπτης'], output_dir, monthdict)
+    # create_2month_barplot(prev_data, daily_rooms['Γενικός διακόπτης'], output_dir, monthdict)
+
+    maxPwrBreakdown(daily_rooms, output_dir)

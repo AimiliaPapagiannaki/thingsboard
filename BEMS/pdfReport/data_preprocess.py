@@ -1,6 +1,5 @@
 import pandas as pd
 
-
 def correct_cumulative_column(df, column_name):
     # Extract the column to a list for easier manipulation
     values = df[column_name].tolist()
