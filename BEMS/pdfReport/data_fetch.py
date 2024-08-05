@@ -1,7 +1,7 @@
 import requests
 import pandas as pd
 import numpy as np
-
+import json
 
 def get_access_token(address):
 
@@ -29,14 +29,49 @@ def get_devid(address, device, entity):
     )
     return response.json()['id']['id']
 
-def get_attr(address, acc_token, devid, attr):
+def get_attr(address, acc_token, devid, month, start_time, end_time):
+    print(start_time, end_time)
+    attrib = {}
+    # get sqmt
+    attr = 'unitsSquareMeters'
     r2 = requests.get(
         url=address + "/api/plugins/telemetry/ASSET/" + devid + "/values/attributes?keys="+attr,
         headers={'Content-Type': 'application/json', 'Accept': '*/*', 'X-Authorization': acc_token}).json()
-    
-    attr = r2[0]['value']
+    attrib['sqmt'] = r2[0]['value']['Eugenides Foundation']
 
-    return attr
+    # get monthly cost
+    attr = 'budgetInfo'
+    r2 = requests.get(
+        url=address + "/api/plugins/telemetry/ASSET/" + devid + "/values/attributes?keys="+attr,
+        headers={'Content-Type': 'application/json', 'Accept': '*/*', 'X-Authorization': acc_token}).json()
+    attrib['budget'] = json.loads(r2[0]['value'])['kiloWattCost'][month-1]
+    # attrib['budget'] = r2[0]['value']['kiloWattCost'][month-1]
+    print(attrib)
+
+
+    # get occupancy telemetry
+    descriptors = 'occupancy'
+    url = f"{address}/api/plugins/telemetry/ASSET/{devid}/values/timeseries"
+    # try:
+    response = requests.get(
+        url=url,
+        params={
+            "keys": descriptors,
+            "startTs": start_time,
+            "endTs": end_time,
+            "agg": "NONE",
+            "limit": 1000000
+        },
+        headers={
+            'Content-Type': 'application/json',
+            'Accept': '*/*',
+            'X-Authorization': acc_token
+        }
+    )
+    r2 = response.json()
+    print('response:',r2)
+
+    return attrib
 
 
 def read_data(address, devid, acc_token, start_time, end_time, descriptors, entity, tmzn):
@@ -85,9 +120,17 @@ def read_data(address, devid, acc_token, start_time, end_time, descriptors, enti
         
 
 
-def retrieve_raw(url, start_time, end_time, tmzn, start_time2, end_time2):
+def retrieve_raw(url, start_time, end_time, tmzn, start_time2, end_time2, month):
     print(start_time2, end_time2)
+    zero_start_time = '1709244000000' # March 1st 2024
     acc_token = get_access_token(url)
+
+    # Retrieve building info (sqmt, occ, budget)
+    buildingid = get_devid(url, 'Eugenides Foundation', 'asset')
+    attrib = get_attr(url, acc_token, buildingid, month, zero_start_time, end_time)
+
+
+
     listdevs = ['102.402.002072','ΚΛΙΜΑΤΙΣΜΟΣ','ΦΩΤΙΣΜΟΣ',
                 'Κέντρο Ερευνας & Τεχνολογίας (ΚΕΤ)',
                 'Αμφιθέατρο',
@@ -105,10 +148,8 @@ def retrieve_raw(url, start_time, end_time, tmzn, start_time2, end_time2):
     devices_subset = listdevs[:3]
     raw_dfs = {}
 
-    buildingid = get_devid(url, 'Eugenides Foundation', 'asset')
-    sqmt = get_attr(url, acc_token, buildingid, 'unitsSquareMeters')
-    print('SquareMeters', sqmt)
-
+    
+    
     for device in listdevs:
         print(device)
         entity = 'device' if (device in devices_subset) else 'asset'
@@ -125,8 +166,26 @@ def retrieve_raw(url, start_time, end_time, tmzn, start_time2, end_time2):
     df = read_data(url, devid, acc_token, start_time2, end_time2, 'totalCleanNrg', 'device', tmzn)
     if not df.empty:
         df['totalCleanNrg'] = np.round(df['totalCleanNrg'],2)
-        
-    return raw_dfs, df, sqmt
+
+    
+    # Fetch data for 3 devices from March 1st 2024
+    
+    monthly_dfs = pd.DataFrame([])
+    for device in ['102.402.002072','Πλανητάριο','Αμφιθέατρο']:
+        entity = 'device' if (device == '102.402.002072') else 'asset'
+        devid = get_devid(url, device, entity)
+
+        descriptors = 'totalCleanNrg'
+        tmp = read_data(url, devid, acc_token, zero_start_time, end_time, descriptors, entity, tmzn)
+        if not tmp.empty:
+            tmp['totalCleanNrg'] = np.round(tmp['totalCleanNrg']/1000,2) # convert to kWh
+            tmp.rename(columns={'totalCleanNrg':device}, inplace=True)
+            monthly_dfs = pd.concat([monthly_dfs,tmp],axis=1)
+            
+    
+    monthly_dfs = monthly_dfs.resample('1M').sum()
+
+    return raw_dfs, df, monthly_dfs,attrib
 
 
     

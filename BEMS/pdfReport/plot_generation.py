@@ -287,28 +287,19 @@ def create_2month_barplot(prev, curr, output_dir, monthdict):
 
     # The x locations for the groups
     ind = prev.index
-
     # The width of the bars
     width = 0.35
 
     fig, ax = plt.subplots(figsize=(7.5,5))
-
-    # Plot bars for Value1
     bars1 = ax.bar(ind - width/2, prev[col_prev], width, label=monthdict[calendar.month_name[month_prev]], color='royalblue')
-
-    # Plot bars for Value2
     bars2 = ax.bar(ind + width/2, prev[col_curr], width, label=monthdict[calendar.month_name[month_curr]], color='orange')
 
-    # Add some text for labels, title and custom x-axis tick labels, etc.
     ax.set_xlabel('Ημέρες')
     ax.set_ylabel('Ενέργεια (kWh)')
     ax.set_title('Ημερήσια κατανάλωση των μηνών: '+monthdict[calendar.month_name[month_prev]]+'/'+monthdict[calendar.month_name[month_curr]], fontsize=14)
     step = 2  # Change this value based on how sparse you want the ticks to be
     ax.set_xticks(ind[::step])
-    # ax.set_xticklabels(prev.index)
     ax.legend()
-
-    # Show the plot
     fig.savefig(output_dir+'bar_compaired.png',dpi=150)
 
 def maxPwrBreakdown(df, output_dir):
@@ -362,7 +353,37 @@ def maxPwrBreakdown(df, output_dir):
     file_name = 'table_maxnrg_split.png' 
     fig.savefig(output_dir+file_name, dpi=150, bbox_inches='tight', pad_inches=1)
 
-def create_plots(cnrg_data, pwr_data, prev_data, daily_rooms, monthly_rooms, output_dir):
+
+def create_line_plot_attr(df, attrib, output_dir):
+
+    # divide consumption with respective attribute
+    df.rename(columns={'102.402.002072':'Γενικός διακόπτης'}, inplace=True)
+    df['Γενικός διακόπτης'] = df['Γενικός διακόπτης']/attrib['sqmt']
+    df['Πλανητάριο'] = df['Πλανητάριο']/attrib['occ_plan']
+    df['Αμφιθέατρο'] = df['Αμφιθέατρο']/attrib['occ_amfi']
+
+
+    # Define the plot
+    fig, ax = plt.subplots(figsize=(10, 6))
+    # Plot each line with different colors and markers
+    ax.plot(df.index.day, df['Minimum power (kW)'], label='Ελάχιστη', color='yellowgreen', marker='o', linestyle='-', markersize=8)
+    
+
+    # Add a legend
+    ax.legend()
+
+    # Add labels and title
+    # ax.set_xlabel('Ημέρες')
+    ax.set_ylabel('Ενεργός ισχύς (kW)')
+    ax.set_title('Ημερήσια μέση, ελάχιστη, μέγιστη ισχύς ')
+    plt.xticks(df.index.day)
+    # Save the figure
+    
+    file_name = 'line_power.png'
+    fig.savefig(output_dir+file_name, dpi=150, bbox_inches='tight')
+
+
+def create_plots(cnrg_data, pwr_data, prev_data, daily_rooms, monthly_rooms, monthly_for_enpis, attrib, output_dir):
 
     monthdict = {'January':'Ιανουάριος',
                  'February':'Φεβρουάριος',
@@ -397,4 +418,8 @@ def create_plots(cnrg_data, pwr_data, prev_data, daily_rooms, monthly_rooms, out
     # comparative barplot 2 months
     # create_2month_barplot(prev_data, daily_rooms['Γενικός διακόπτης'], output_dir, monthdict)
 
-    maxPwrBreakdown(daily_rooms, output_dir)
+    # Split loads on day with max power
+    # maxPwrBreakdown(daily_rooms, output_dir)
+
+    # Monthly Line charts with sqmt/occ
+    create_line_plot_attr(monthly_for_enpis, attrib, output_dir)
