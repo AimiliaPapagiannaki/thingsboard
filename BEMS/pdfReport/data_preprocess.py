@@ -61,6 +61,5 @@ def preprocess_data(raw):
     monthly_rooms = monthly_rooms.T
     monthly_rooms.columns = ['Energy consumption (kWh)']
 
-    print('monthly sum of rooms:', monthly_rooms)
 
     return cnrg_data, pwr_data, energy_data, monthly_rooms

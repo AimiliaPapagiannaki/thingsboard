@@ -3,7 +3,7 @@ import seaborn as sns
 import pandas as pd
 import numpy as np
 import calendar
-import matplotlib
+import matplotlib.dates as mdates
 
 
 
@@ -302,6 +302,7 @@ def create_2month_barplot(prev, curr, output_dir, monthdict):
     ax.legend()
     fig.savefig(output_dir+'bar_compaired.png',dpi=150)
 
+
 def maxPwrBreakdown(df, output_dir):
     maxnrg = df['Γενικός διακόπτης'].max()
     maxdf = df.loc[df['Γενικός διακόπτης']==maxnrg]
@@ -354,36 +355,82 @@ def maxPwrBreakdown(df, output_dir):
     fig.savefig(output_dir+file_name, dpi=150, bbox_inches='tight', pad_inches=1)
 
 
-def create_line_plot_attr(df, attrib, output_dir):
-
+def create_line_plot_attr(df, attrib, df_occ, output_dir):
+    
     # divide consumption with respective attribute
     df.rename(columns={'102.402.002072':'Γενικός διακόπτης'}, inplace=True)
-    df['Γενικός διακόπτης'] = df['Γενικός διακόπτης']/attrib['sqmt']
-    df['Πλανητάριο'] = df['Πλανητάριο']/attrib['occ_plan']
-    df['Αμφιθέατρο'] = df['Αμφιθέατρο']/attrib['occ_amfi']
+    df['kWh/τ.μ. Κτιρίου'] = df['Γενικός διακόπτης']/attrib['sqmt']
+
+    df = pd.concat([df,df_occ], axis=1)
+    df['kWh/ώρα χρήσης (Αμφιθέατρο)'] = df['Αμφιθέατρο']/df['Χρήση Αμφιθέατρο']
+    df['kWh/ώρα χρήσης (Πλανητάριο)'] = df['Πλανητάριο']/df['Χρήση Πλανητάριο']
+    colordict={'kWh/τ.μ. Κτιρίου':'yellowgreen', 'kWh/ώρα χρήσης (Αμφιθέατρο)':'brown', 'kWh/ώρα χρήσης (Πλανητάριο)':'royalblue'}
+    titledict={'kWh/τ.μ. Κτιρίου':'total', 'kWh/ώρα χρήσης (Αμφιθέατρο)':'amfi', 'kWh/ώρα χρήσης (Πλανητάριο)':'planet'}
+
+    for col in ['kWh/τ.μ. Κτιρίου', 'kWh/ώρα χρήσης (Αμφιθέατρο)', 'kWh/ώρα χρήσης (Πλανητάριο)']:
+        # Define the plot
+        fig, ax = plt.subplots(figsize=(10, 6))
+        # Plot each line with different colors and markers
+        ax.plot(df.index, df[col], color=colordict[col], marker='o', linestyle='-', markersize=8)
+        # Set x-axis major locator and formatter
+        ax.xaxis.set_major_locator(mdates.MonthLocator())  # Set the locator to months
+        ax.xaxis.set_major_formatter(mdates.DateFormatter('%m-%Y'))  # Format as 'Month Year'
+        plt.xticks(rotation=90)
+        ax.set_ylabel('kWh')
+        ax.set_title(col)
+        file_name = 'monthly_line'+titledict[col]+'.png'
+        fig.savefig(output_dir+file_name, dpi=150, bbox_inches='tight')
+    return df
 
 
-    # Define the plot
-    fig, ax = plt.subplots(figsize=(10, 6))
-    # Plot each line with different colors and markers
-    ax.plot(df.index.day, df['Minimum power (kW)'], label='Ελάχιστη', color='yellowgreen', marker='o', linestyle='-', markersize=8)
+def create_enpis_table(loads_df, all_df, attrib, output_dir):
+    loads_df = loads_df.resample('MS').sum()
+    all_df = pd.concat([all_df,loads_df],axis=1)
+    all_df = all_df.dropna()
     
-
-    # Add a legend
-    ax.legend()
-
-    # Add labels and title
-    # ax.set_xlabel('Ημέρες')
-    ax.set_ylabel('Ενεργός ισχύς (kW)')
-    ax.set_title('Ημερήσια μέση, ελάχιστη, μέγιστη ισχύς ')
-    plt.xticks(df.index.day)
-    # Save the figure
+    enpis = {}
+    enpis['Συνολική κατανάλωση (kWh)/τ.μ. εγκατάστασης'] = all_df['kWh/τ.μ. Κτιρίου'].max()
+    enpis['Συνολική κατανάλωση Κλιματισμού (kWh)/τ.μ. εγκατάστασης'] = all_df['ΚΛΙΜΑΤΙΣΜΟΣ'].max()/attrib['sqmt']
+    enpis['Συνολική κατανάλωση Φωτισμού (kWh)/τ.μ. εγκατάστασης'] = all_df['ΦΩΤΙΣΜΟΣ'].max()/attrib['sqmt']
+    enpis['Μηνιαίες ώρες λειτουργίας Πλανηταρίου'] = all_df['Χρήση Πλανητάριο'].max()
+    enpis['Μηνιαίες ώρες λειτουργίας Αμφιθεάτρου'] = all_df['Χρήση Αμφιθέατρο'].max()
+    enpis['Κατανάλωση ανά ώρα χρήσης Πλανηταρίου (kWh)'] = all_df['kWh/ώρα χρήσης (Πλανητάριο)'].max()
+    enpis['Κατανάλωση ανά ώρα χρήσης Αμφιθεάτρου (kWh)'] = all_df['kWh/ώρα χρήσης (Αμφιθέατρο)'].max()
+    enpis['Κατανάλωση Πλανηταρίου & Αμφιθεάτρου/Συνολική (%)'] = (all_df['Πλανητάριο'].max()+all_df['Αμφιθέατρο'].max())/all_df['Γενικός διακόπτης'].max()
+    enpis['Μηνιαίο ενεργειακό κόστος εγκατάστασης (Ευρώ)'] = all_df['Γενικός διακόπτης'].max()*attrib['budget']
+    enpis = pd.DataFrame(list(enpis.items()), columns=['EnPis', 'Τιμή'])
+    enpis['Τιμή'] = enpis['Τιμή'].round(decimals=2)
     
-    file_name = 'line_power.png'
-    fig.savefig(output_dir+file_name, dpi=150, bbox_inches='tight')
+    # Determine figure size based on number of rows
+    num_rows = len(enpis)
+    fig_height = 0.6 * num_rows + 2  # Adjust the multiplier and base value as needed
+    fig = plt.figure(figsize=(7, fig_height))
+    ax1 = plt.subplot(111, aspect='equal')
+    ax1.axis('off')
+    t= ax1.table(cellText=enpis.values, 
+                 colLabels=enpis.columns,  
+                 loc='center',cellLoc ='center', 
+                 colLoc='center', 
+                #  colColours=['tab:gray','mediumseagreen','mediumseagreen'],
+                 colColours=['royalblue','royalblue'],
+                 colWidths=[0.5 for x in enpis.columns])
+    t.auto_set_font_size(False) 
+    t.auto_set_column_width(col=list(range(len(enpis.columns))))
+    
+    
+    table_cells = t.get_children()
+    for cell in table_cells: cell.set_height(0.07)
+    
+    table_title = 'Δείκτες ενεργειακής επίδοσης'
+    ax1.set_title(table_title,fontsize=14, pad=20)
+    t.auto_set_column_width(col=list(range(len(enpis.columns))))
+    
+    file_name = 'table_enpis.png'
+    fig.savefig(output_dir+file_name, dpi=150, bbox_inches='tight', pad_inches=1)
 
 
-def create_plots(cnrg_data, pwr_data, prev_data, daily_rooms, monthly_rooms, monthly_for_enpis, attrib, output_dir):
+
+def create_plots(cnrg_data, pwr_data, prev_data, daily_rooms, monthly_rooms, monthly_for_enpis, attrib, df_occ, output_dir):
 
     monthdict = {'January':'Ιανουάριος',
                  'February':'Φεβρουάριος',
@@ -422,4 +469,7 @@ def create_plots(cnrg_data, pwr_data, prev_data, daily_rooms, monthly_rooms, mon
     # maxPwrBreakdown(daily_rooms, output_dir)
 
     # Monthly Line charts with sqmt/occ
-    create_line_plot_attr(monthly_for_enpis, attrib, output_dir)
+    monthly_for_enpis = create_line_plot_attr(monthly_for_enpis, attrib, df_occ, output_dir)
+
+    # Table with EnPis
+    create_enpis_table(daily_rooms[['ΚΛΙΜΑΤΙΣΜΟΣ','ΦΩΤΙΣΜΟΣ']], monthly_for_enpis, attrib, output_dir)

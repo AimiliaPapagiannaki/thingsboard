@@ -29,7 +29,7 @@ def get_devid(address, device, entity):
     )
     return response.json()['id']['id']
 
-def get_attr(address, acc_token, devid, month, start_time, end_time):
+def get_attr(address, acc_token, devid, month, start_time, end_time, tmzn):
     print(start_time, end_time)
     attrib = {}
     # get sqmt
@@ -44,8 +44,8 @@ def get_attr(address, acc_token, devid, month, start_time, end_time):
     r2 = requests.get(
         url=address + "/api/plugins/telemetry/ASSET/" + devid + "/values/attributes?keys="+attr,
         headers={'Content-Type': 'application/json', 'Accept': '*/*', 'X-Authorization': acc_token}).json()
-    attrib['budget'] = json.loads(r2[0]['value'])['kiloWattCost'][month-1]
-    # attrib['budget'] = r2[0]['value']['kiloWattCost'][month-1]
+    # attrib['budget'] = json.loads(r2[0]['value'])['kiloWattCost'][month-1]
+    attrib['budget'] = r2[0]['value']['kiloWattCost'][month-1]
     print(attrib)
 
 
@@ -69,9 +69,27 @@ def get_attr(address, acc_token, devid, month, start_time, end_time):
         }
     )
     r2 = response.json()
-    print('response:',r2)
+    occ_raw = r2['occupancy']
+    occ_processed = []
+    for entry in occ_raw:
+        ts = entry['ts']
+        values = json.loads(entry['value'])
+        values['ts'] = ts
+        occ_processed.append(values)
+    # Create DataFrame
+    df_occ = pd.DataFrame(occ_processed)
+    df_occ['ts'] = pd.to_datetime(df_occ['ts'], unit='ms')
+    df_occ['ts'] = df_occ['ts'].dt.tz_localize('utc').dt.tz_convert(tmzn)
+    df_occ.sort_values(by=['ts'], inplace=True)
+    df_occ.set_index('ts', inplace=True, drop=True)
 
-    return attrib
+    for col in df_occ.columns:
+        df_occ[col] = pd.to_numeric(df_occ[col], errors='coerce')
+    df_occ.rename(columns={'Αμφιθέατρο':'Χρήση Αμφιθέατρο','Πλανητάριο':'Χρήση Πλανητάριο'}, inplace=True)
+    df_occ = df_occ.resample('MS').max()
+    print('Occupancy: \n',df_occ)
+
+    return attrib, df_occ
 
 
 def read_data(address, devid, acc_token, start_time, end_time, descriptors, entity, tmzn):
@@ -127,7 +145,7 @@ def retrieve_raw(url, start_time, end_time, tmzn, start_time2, end_time2, month)
 
     # Retrieve building info (sqmt, occ, budget)
     buildingid = get_devid(url, 'Eugenides Foundation', 'asset')
-    attrib = get_attr(url, acc_token, buildingid, month, zero_start_time, end_time)
+    [attrib, df_occ] = get_attr(url, acc_token, buildingid, month, zero_start_time, end_time, tmzn)
 
 
 
@@ -183,9 +201,9 @@ def retrieve_raw(url, start_time, end_time, tmzn, start_time2, end_time2, month)
             monthly_dfs = pd.concat([monthly_dfs,tmp],axis=1)
             
     
-    monthly_dfs = monthly_dfs.resample('1M').sum()
+    monthly_dfs = monthly_dfs.resample('MS').sum()
 
-    return raw_dfs, df, monthly_dfs,attrib
+    return raw_dfs, df, monthly_dfs, attrib, df_occ
 
 
     
