@@ -30,7 +30,7 @@ def get_devid(address, device, entity):
     return response.json()['id']['id']
 
 def get_attr(address, acc_token, devid, month, start_time, end_time, tmzn):
-    print(start_time, end_time)
+    
     attrib = {}
     # get sqmt
     attr = 'unitsSquareMeters'
@@ -46,7 +46,7 @@ def get_attr(address, acc_token, devid, month, start_time, end_time, tmzn):
         headers={'Content-Type': 'application/json', 'Accept': '*/*', 'X-Authorization': acc_token}).json()
     # attrib['budget'] = json.loads(r2[0]['value'])['kiloWattCost'][month-1]
     attrib['budget'] = r2[0]['value']['kiloWattCost'][month-1]
-    print(attrib)
+    
 
 
     # get occupancy telemetry
@@ -87,7 +87,7 @@ def get_attr(address, acc_token, devid, month, start_time, end_time, tmzn):
         df_occ[col] = pd.to_numeric(df_occ[col], errors='coerce')
     df_occ.rename(columns={'Αμφιθέατρο':'Χρήση Αμφιθέατρο','Πλανητάριο':'Χρήση Πλανητάριο'}, inplace=True)
     df_occ = df_occ.resample('MS').max()
-    print('Occupancy: \n',df_occ)
+    
 
     return attrib, df_occ
 
@@ -139,7 +139,7 @@ def read_data(address, devid, acc_token, start_time, end_time, descriptors, enti
 
 
 def retrieve_raw(url, start_time, end_time, tmzn, start_time2, end_time2, month):
-    print(start_time2, end_time2)
+    
     zero_start_time = '1709244000000' # March 1st 2024
     acc_token = get_access_token(url)
 
@@ -169,7 +169,7 @@ def retrieve_raw(url, start_time, end_time, tmzn, start_time2, end_time2, month)
     
     
     for device in listdevs:
-        print(device)
+        
         entity = 'device' if (device in devices_subset) else 'asset'
         devid = get_devid(url, device, entity)
 

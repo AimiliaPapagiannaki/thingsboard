@@ -227,7 +227,7 @@ def create_bar_plot(df, output_dir, monthdict):
 
     month = monthdict[calendar.month_name[df.index[0].month]]
 
-    colorlist = ['mediumseagreen','royalblue','olivedrab','chocolate','darkmagenta']
+    colorlist = ['mediumseagreen','royalblue','darkmagenta','chocolate','olivedrab']
     i=0
     for room in ['Γενικός διακόπτης','Πλανητάριο','Αμφιθέατρο','ΚΛΙΜΑΤΙΣΜΟΣ','ΦΩΤΙΣΜΟΣ']:
 
@@ -448,29 +448,58 @@ def create_plots(cnrg_data, pwr_data, prev_data, daily_rooms, monthly_rooms, mon
     
     # Rooms breakdown tables & pie charts
     specific_loads = ['Πλανητάριο', 'Αμφιθέατρο']
-    create_table(monthly_rooms, output_dir)
-    create_table(monthly_rooms, output_dir, specific_loads=specific_loads)
-    create_pie(monthly_rooms, output_dir)
-    create_pie(monthly_rooms, output_dir, specific_loads=specific_loads)
+    
+    try:
+        create_table(monthly_rooms, output_dir)
+        create_table(monthly_rooms, output_dir, specific_loads=specific_loads)
+    except:
+        print("Unable to create tables with loads")
+
+    try:
+        create_pie(monthly_rooms, output_dir)
+        create_pie(monthly_rooms, output_dir, specific_loads=specific_loads)
+    except:
+        print("Unable to create pies")
 
     # Bar charts
-    create_bar_plot(daily_rooms, output_dir,monthdict)
+    try:
+        create_bar_plot(daily_rooms, output_dir,monthdict)
+    except:
+        print("Unable to create barplots")
 
     # Active power plots
-    create_pwr_table(pwr_data, output_dir)
-    create_line_plot_pwr(pwr_data, output_dir, monthdict)
+    try:
+        create_pwr_table(pwr_data, output_dir)
+        create_line_plot_pwr(pwr_data, output_dir, monthdict)
+    except:
+        print("Unable to create power table plot")
 
     # heatmap
-    create_heatmap(cnrg_data, output_dir)
+    try:
+        create_heatmap(cnrg_data, output_dir)
+    except:
+        print("Unable to create heatmap")
 
     # comparative barplot 2 months
-    create_2month_barplot(prev_data, daily_rooms['Γενικός διακόπτης'], output_dir, monthdict)
+    try:
+        create_2month_barplot(prev_data, daily_rooms['Γενικός διακόπτης'], output_dir, monthdict)
+    except:
+        print("Unable to create comparative barplot")
 
     # Split loads on day with max power
-    maxPwrBreakdown(daily_rooms, output_dir)
+    try:
+        maxPwrBreakdown(daily_rooms, output_dir)
+    except:
+        print("Unable to create power  breakdown")
 
     # Monthly Line charts with sqmt/occ
-    monthly_for_enpis = create_line_plot_attr(monthly_for_enpis, attrib, df_occ, output_dir)
+    try:
+        monthly_for_enpis = create_line_plot_attr(monthly_for_enpis, attrib, df_occ, output_dir)
+    except:
+        print("Unable to create lineplot/enpis")
 
     # Table with EnPis
-    create_enpis_table(daily_rooms[['ΚΛΙΜΑΤΙΣΜΟΣ','ΦΩΤΙΣΜΟΣ']], monthly_for_enpis, attrib, output_dir)
+    try:
+        create_enpis_table(daily_rooms[['ΚΛΙΜΑΤΙΣΜΟΣ','ΦΩΤΙΣΜΟΣ']], monthly_for_enpis, attrib, output_dir)
+    except:
+        print("unavle to create enpis table")

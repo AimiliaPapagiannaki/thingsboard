@@ -30,6 +30,7 @@ def main():
     tmzn = pytz.timezone('Europe/Athens')    
     endm = tmzn.localize(endm)
     startm = tmzn.localize(startm)
+    print(startm, endm)
 
     endm2 = tmzn.localize(endm2)
     startm2 = tmzn.localize(startm2)
@@ -41,15 +42,18 @@ def main():
     start_time2 = str(int((startm2).timestamp() * 1000))
     # Step 1: Fetch data
     [raw_data, prev_data, monthly_for_enpis, attrib, df_occ] = data_fetch.retrieve_raw(config.DATA_URL, start_time, end_time, tmzn, start_time2, end_time2, month)
-
+    print("Fetched data")
+    
     # Step 2: Preprocess data
     [cnrg_data, pwr_data, daily_rooms, monthly_rooms] = data_preprocess.preprocess_data(raw_data)
     
     # Step 3: Generate plots
     plot_generation.create_plots(cnrg_data, pwr_data, prev_data, daily_rooms, monthly_rooms, monthly_for_enpis, attrib, df_occ, config.OUTPUT_DIR)
+    print("Created plots")
     
     # Step 4: Create PDF report
-    pdf_creation.create_pdf(config.OUTPUT_DIR, month, year)
+    pdf_creation.create_pdf(config.OUTPUT_DIR, config.PDF_DIR, month, year)
+    print("PDF ready")
     # print(f"PDF report created at {config.OUTPUT_DIR}")
 
 if __name__ == "__main__":

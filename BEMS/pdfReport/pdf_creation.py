@@ -1,4 +1,6 @@
 from fpdf import FPDF
+import os
+import glob
 import config
 logos_dir = config.LOGOS_DIR
 
@@ -18,72 +20,111 @@ class FPDF(FPDF):
 
 
 
-def create_pdf(output_dir, month, year):
+def create_pdf(output_dir, pdf_dir, month, year):
+    
     
     pdf = FPDF()
-    pdf.add_font('DejaVuB', '', r"/usr/local/lib/python3.8/dist-packages/fpdf/fonts/DejaVuSans-Bold.ttf", uni=True)
-    pdf.set_font('DejaVuB', '', 14)
-    pdf.add_page()
-    pdf.set_xy(50, 10)
-    pdf.cell(0, 10, "Αναφορά ενεργειακής επίδοσης "+str(month)+"-"+str(year), 0, 1, 'C')
-    pdf.image(output_dir+'table_rooms_breakdown.png', x=40, y=None, w=130, h=130, type='', link='')
-    pdf.set_xy(40, 140)
-    pdf.image(output_dir+'pie_total.png', x=30, y=None, w=170, h=125, type='', link='')
+    try:
+        pdf.add_font('DejaVuB', '', r"/usr/local/lib/python3.8/dist-packages/fpdf/fonts/DejaVuSans-Bold.ttf", uni=True)
+        pdf.set_font('DejaVuB', '', 14)
+        pdf.add_page()
+        pdf.set_xy(30, 10)
+        pdf.cell(0, 10, "Αναφορά ενεργειακής επίδοσης "+str(month)+"-"+str(year), 0, 1, 'C')
+        pdf.image(output_dir+'table_rooms_breakdown.png', x=40, y=None, w=130, h=130, type='', link='')
+        pdf.set_xy(40, 140)
+        pdf.image(output_dir+'pie_total.png', x=30, y=None, w=170, h=125, type='', link='')
+    except:
+        print("page 1")
     
-
-    pdf.add_page()
-    pdf.set_xy(50, 10)
-    pdf.image(output_dir+'table_specific_rooms_breakdown.png', x=30, y=None, w=130, h=100, type='', link='')
-    pdf.set_xy(40, 100)
-    pdf.image(output_dir+'pie_specific.png', x=30, y=None, w=170, h=125, type='', link='')
+    try:
+        pdf.add_page()
+        pdf.set_xy(50, 10)
+        pdf.image(output_dir+'table_specific_rooms_breakdown.png', x=30, y=None, w=130, h=100, type='', link='')
+        pdf.set_xy(40, 100)
+        pdf.image(output_dir+'pie_specific.png', x=30, y=None, w=170, h=125, type='', link='')
+    except:
+        print('page 2')
     
-    pdf.add_page()
-    pdf.set_xy(50, 10)
-    pdf.image(output_dir+'table_enpis.png', x=30, y=None, w=150, h=150, type='', link='')
+    try:
+        pdf.add_page()
+        pdf.set_xy(50, 10)
+        pdf.image(output_dir+'table_enpis.png', x=30, y=None, w=150, h=150, type='', link='')
+    except:
+        print("page 3")
 
-    pdf.add_page()
-    pdf.set_xy(10, 30)
-    pdf.image(output_dir+'monthly_linetotal.png', x=None, y=None, w=170, h=60, type='', link='')
-    pdf.set_xy(10, 110)
-    pdf.image(output_dir+'monthly_lineplanet.png', x=None, y=None, w=170, h=60, type='', link='')
-    pdf.set_xy(10, 180)
-    pdf.image(output_dir+'monthly_lineamfi.png', x=None, y=None, w=170, h=60, type='', link='')
+    try:
+        pdf.add_page()
+        pdf.set_xy(10, 30)
+        pdf.image(output_dir+'monthly_linetotal.png', x=None, y=None, w=170, h=60, type='', link='')
+        pdf.set_xy(10, 110)
+        pdf.image(output_dir+'monthly_lineplanet.png', x=None, y=None, w=170, h=60, type='', link='')
+        pdf.set_xy(10, 180)
+        pdf.image(output_dir+'monthly_lineamfi.png', x=None, y=None, w=170, h=60, type='', link='')
+    except:
+        print("page 4")
     
-    pdf.add_page()
-    pdf.set_xy(50, 20)
-    pdf.image(output_dir+'heatmap.png', x=40, y=None, w=130, h=115, type='', link='')
-    pdf.set_xy(40, 150)
-    pdf.image(output_dir+'bar_daily_Γενικός διακόπτης.png', x=30, y=None, w=150, h=100, type='', link='')
+    try:
+        pdf.add_page()
+        pdf.set_xy(50, 20)
+        pdf.image(output_dir+'heatmap.png', x=40, y=None, w=130, h=115, type='', link='')
+        pdf.set_xy(40, 150)
+        pdf.image(output_dir+'bar_daily_Γενικός διακόπτης.png', x=30, y=None, w=150, h=100, type='', link='')
+    except:
+        print("page 5")
 
-    pdf.add_page()
-    pdf.set_xy(50, 20)
-    pdf.image(output_dir+'bar_daily_Πλανητάριο.png', x=30, y=None, w=150, h=100, type='', link='')
-    pdf.set_xy(40, 150)
-    pdf.image(output_dir+'bar_daily_Αμφιθέατρο.png', x=30, y=None, w=150, h=100, type='', link='')
+    try:
+        pdf.add_page()
+        pdf.set_xy(50, 20)
+        pdf.image(output_dir+'bar_daily_Πλανητάριο.png', x=30, y=None, w=150, h=100, type='', link='')
+        pdf.set_xy(40, 150)
+        pdf.image(output_dir+'bar_daily_Αμφιθέατρο.png', x=30, y=None, w=150, h=100, type='', link='')
+    except:
+        print("page 6")
     
-    pdf.add_page()
-    pdf.set_xy(50, 20)
-    pdf.image(output_dir+'bar_daily_Κλιματισμος.png', x=30, y=None, w=150, h=100, type='', link='')
-    pdf.set_xy(40, 150)
-    pdf.image(output_dir+'bar_daily_Φωτισμος.png', x=30, y=None, w=150, h=100, type='', link='')
+    try:
+        pdf.add_page()
+        pdf.set_xy(50, 20)
+        pdf.image(output_dir+'bar_daily_Κλιματισμος.png', x=30, y=None, w=150, h=100, type='', link='')
+        pdf.set_xy(40, 150)
+        pdf.image(output_dir+'bar_daily_Φωτισμος.png', x=30, y=None, w=150, h=100, type='', link='')
+    except:
+        print("page 7")
 
-    pdf.add_page()
-    pdf.set_xy(50, 20)
-    pdf.image(output_dir+'table_10maxpwr.png', x=40, y=None, w=140, h=160, type='', link='')
+    try:
+        pdf.add_page()
+        pdf.set_xy(50, 20)
+        pdf.image(output_dir+'table_10maxpwr.png', x=40, y=None, w=140, h=160, type='', link='')
+    except:
+        print("page 8")
 
-    pdf.add_page()
-    pdf.set_xy(50, 20)
-    pdf.image(output_dir+'table_maxnrg_split.png', x=35, y=None, w=150, h=140, type='', link='')
+    try:
+        pdf.add_page()
+        pdf.set_xy(50, 20)
+        pdf.image(output_dir+'table_maxnrg_split.png', x=35, y=None, w=150, h=140, type='', link='')
+    except:
+        print("page 9")
 
-    pdf.add_page()
-    pdf.set_xy(50, 20)
-    pdf.image(output_dir+'line_power.png', x=30, y=None, w=150, h=100, type='', link='')
-    pdf.set_xy(40, 150)
-    pdf.image(output_dir+'bar_compaired.png', x=30, y=None, w=150, h=100, type='', link='')
+    try:
+        pdf.add_page()
+        pdf.set_xy(50, 20)
+        pdf.image(output_dir+'line_power.png', x=30, y=None, w=150, h=100, type='', link='')
+        pdf.set_xy(40, 150)
+        pdf.image(output_dir+'bar_compaired.png', x=30, y=None, w=150, h=100, type='', link='')
+    except:
+        print("page 10")
     
     ##############################
     filename = 'Evgenidio_'+str(month)+'_'+str(year)+'.pdf'
-    pdf.output(output_dir+filename , 'F')
+    pdf.output(pdf_dir+filename , 'F')
+
+    pngfiles = glob.glob(os.path.join(output_dir, '*.png'))
+    for file_path in pngfiles:
+        try:
+            os.remove(file_path)
+        except OSError as e:
+            print(f"Error deleting {file_path}: {e}")
+
+
     
     return
     
