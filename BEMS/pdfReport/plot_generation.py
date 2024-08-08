@@ -369,7 +369,8 @@ def create_line_plot_attr(df, attrib, df_occ, output_dir):
 
     for col in ['kWh/τ.μ. Κτιρίου', 'kWh/ώρα χρήσης (Αμφιθέατρο)', 'kWh/ώρα χρήσης (Πλανητάριο)']:
         # Define the plot
-        fig, ax = plt.subplots(figsize=(10, 6))
+        # fig, ax = plt.subplots(figsize=(10, 6))
+        fig, ax = plt.subplots(figsize=(15, 4))
         # Plot each line with different colors and markers
         ax.plot(df.index, df[col], color=colordict[col], marker='o', linestyle='-', markersize=8)
         # Set x-axis major locator and formatter
@@ -445,28 +446,28 @@ def create_plots(cnrg_data, pwr_data, prev_data, daily_rooms, monthly_rooms, mon
                  'November':'Νοέμβριος',
                  'December':'Δεκέμβριος'}
     
-    # # Rooms breakdown tables & pie charts
-    # specific_loads = ['Πλανητάριο', 'Αμφιθέατρο']
-    # create_table(monthly_rooms, output_dir)
-    # create_table(monthly_rooms, output_dir, specific_loads=specific_loads)
-    # create_pie(monthly_rooms, output_dir)
-    # create_pie(monthly_rooms, output_dir, specific_loads=specific_loads)
+    # Rooms breakdown tables & pie charts
+    specific_loads = ['Πλανητάριο', 'Αμφιθέατρο']
+    create_table(monthly_rooms, output_dir)
+    create_table(monthly_rooms, output_dir, specific_loads=specific_loads)
+    create_pie(monthly_rooms, output_dir)
+    create_pie(monthly_rooms, output_dir, specific_loads=specific_loads)
 
-    # # Bar charts
-    # create_bar_plot(daily_rooms, output_dir,monthdict)
+    # Bar charts
+    create_bar_plot(daily_rooms, output_dir,monthdict)
 
-    # # Active power plots
-    # create_pwr_table(pwr_data, output_dir)
-    # create_line_plot_pwr(pwr_data, output_dir, monthdict)
+    # Active power plots
+    create_pwr_table(pwr_data, output_dir)
+    create_line_plot_pwr(pwr_data, output_dir, monthdict)
 
     # heatmap
-    # create_heatmap(cnrg_data, output_dir)
+    create_heatmap(cnrg_data, output_dir)
 
     # comparative barplot 2 months
-    # create_2month_barplot(prev_data, daily_rooms['Γενικός διακόπτης'], output_dir, monthdict)
+    create_2month_barplot(prev_data, daily_rooms['Γενικός διακόπτης'], output_dir, monthdict)
 
     # Split loads on day with max power
-    # maxPwrBreakdown(daily_rooms, output_dir)
+    maxPwrBreakdown(daily_rooms, output_dir)
 
     # Monthly Line charts with sqmt/occ
     monthly_for_enpis = create_line_plot_attr(monthly_for_enpis, attrib, df_occ, output_dir)

@@ -6,7 +6,6 @@ import config
 import datetime
 import pytz
 from dateutil.relativedelta import relativedelta
-import calendar
 
 #STEPS:
 # 1. Fetch daily energy data for all building units (assets), Loads Klimatismos/Fotismos
@@ -45,11 +44,12 @@ def main():
 
     # Step 2: Preprocess data
     [cnrg_data, pwr_data, daily_rooms, monthly_rooms] = data_preprocess.preprocess_data(raw_data)
+    
     # Step 3: Generate plots
     plot_generation.create_plots(cnrg_data, pwr_data, prev_data, daily_rooms, monthly_rooms, monthly_for_enpis, attrib, df_occ, config.OUTPUT_DIR)
     
     # Step 4: Create PDF report
-    # pdf_creation.create_pdf_report(config.OUTPUT_DIR)
+    pdf_creation.create_pdf(config.OUTPUT_DIR, month, year)
     # print(f"PDF report created at {config.OUTPUT_DIR}")
 
 if __name__ == "__main__":

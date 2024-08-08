@@ -1,4 +1,6 @@
 from fpdf import FPDF
+import config
+logos_dir = config.LOGOS_DIR
 
 class FPDF(FPDF):
     # Page footer
@@ -9,137 +11,79 @@ class FPDF(FPDF):
         self.set_font('Arial', 'I', 8)
         # Page number
         self.cell(0, 10, str(self.page_no()), 0, 0, 'C')
-        #self.set_y(-10)
-  #      self.image('picturemessage_vinnf3lu.tl2.png', x=180, y=None, w=25, h=8)
+        self.image(logos_dir+'meazon.png', x=170, y=None, w=30, h=10)
     def header(self):
         self.set_y(10)
-        self.image('/home/mcubeazon/HttpServer_Andreas/serverFiles/meazon.png', x=10, y=None, w=30, h=10)
-        
-    def footer(self):
-        # Go to 1.5 cm from bottom
-        self.set_y(-15)
-        # Print centered page number
-        self.cell(0, 10, 'Designed by Vassilis Barberis', 0, 0, 'C')
+        self.image(logos_dir+'evgenidio.png', x=None, y=10, w=15, h=15)
 
 
 
-def create_pdf(path, filename, month_Name, year,flag):
-        
+def create_pdf(output_dir, month, year):
+    
     pdf = FPDF()
+    pdf.add_font('DejaVuB', '', r"/usr/local/lib/python3.8/dist-packages/fpdf/fonts/DejaVuSans-Bold.ttf", uni=True)
+    pdf.set_font('DejaVuB', '', 14)
     pdf.add_page()
-    pdf.set_xy(20, 20)
-    pdf.set_font('arial', 'B', 16)
-    pdf.cell(0,8, "Moxy Patras", 0, 1, 'C')
-    pdf.cell(0, 10, "Summarized activity of month: "+ month_Name+" "+str(year), 0, 1, 'C')
+    pdf.set_xy(50, 10)
+    pdf.cell(0, 10, "Αναφορά ενεργειακής επίδοσης "+str(month)+"-"+str(year), 0, 1, 'C')
+    pdf.image(output_dir+'table_rooms_breakdown.png', x=40, y=None, w=130, h=130, type='', link='')
+    pdf.set_xy(40, 140)
+    pdf.image(output_dir+'pie_total.png', x=30, y=None, w=170, h=125, type='', link='')
+    
 
-    pdf.set_font('arial', '', 12)
-    str9 = " "
-    pdf.write(5, str9)
-
-    pdf.set_xy(15, 40)
-    
-    if not flag:
-        pdf.image('tablepie.png', x=30, y=None, w=150, h=120, type='', link='')
-    else:
-        pdf.image('tablepie.png', x=30, y=None, w=150, h=140, type='', link='')
-    
-    pdf.add_page(orientation='L')
-    #
-    
-    #pdf.add_page()
-    
-    pdf.set_xy(40, 30)
-    
-    if not flag:
-        pdf.image('moxypie.png', x=40, y=None, w=160, h=150, type='', link='')
-    else:
-        pdf.image('moxypie.png', x=60, y=None, w=160, h=150, type='', link='')
-    # page 2
+    pdf.add_page()
+    pdf.set_xy(50, 10)
+    pdf.image(output_dir+'table_specific_rooms_breakdown.png', x=30, y=None, w=130, h=100, type='', link='')
+    pdf.set_xy(40, 100)
+    pdf.image(output_dir+'pie_specific.png', x=30, y=None, w=170, h=125, type='', link='')
     
     pdf.add_page()
-    
+    pdf.set_xy(50, 10)
+    pdf.image(output_dir+'table_enpis.png', x=30, y=None, w=150, h=150, type='', link='')
+
+    pdf.add_page()
     pdf.set_xy(10, 30)
-    pdf.set_font('arial', 'B', 12)
-    pdf.image('EnPis.png', x=35, y=None,w=160, h=80, type='', link='')
+    pdf.image(output_dir+'monthly_linetotal.png', x=None, y=None, w=170, h=60, type='', link='')
+    pdf.set_xy(10, 110)
+    pdf.image(output_dir+'monthly_lineplanet.png', x=None, y=None, w=170, h=60, type='', link='')
+    pdf.set_xy(10, 180)
+    pdf.image(output_dir+'monthly_lineamfi.png', x=None, y=None, w=170, h=60, type='', link='')
     
-    
-    pdf.add_page(orientation='L')
-    pdf.set_xy(50, 30)
-    pdf.cell(75, 10, " ", 0, 2, 'C')
-    pdf.image('energy_room.png', x=None, y=None, w=180, h=140, type='', link='')
-    
-    
-    #page 3
-    pdf.add_page(orientation='L')
-    pdf.set_xy(50, 30)
-    pdf.image('heatmap_nrg.png', x=None, y=None, w=190, h=140, type='', link='')
-    
+    pdf.add_page()
+    pdf.set_xy(50, 20)
+    pdf.image(output_dir+'heatmap.png', x=40, y=None, w=130, h=115, type='', link='')
+    pdf.set_xy(40, 150)
+    pdf.image(output_dir+'bar_daily_Γενικός διακόπτης.png', x=30, y=None, w=150, h=100, type='', link='')
 
-    #page 3
-    pdf.add_page(orientation='L')
-    pdf.set_xy(50, 30) 
-    
-    pdf.image('monthly_Total.png', x=50, y=None, w=190, h=140, type='', link='')
-    
-    pdf.add_page(orientation='L')
-    pdf.set_xy(50, 30)
-    pdf.image('monthlyPwr_Total.png', x=50, y=None, w=190, h=140, type='', link='')
-    
-    #page 3
-    pdf.add_page(orientation='L')
-    pdf.set_xy(50, 30) 
-    
-    pdf.image('monthly_AirCondition.png', x=50, y=None, w=190, h=140, type='', link='')
-    
-    pdf.add_page(orientation='L')
-    pdf.set_xy(50, 30)
-    pdf.image('monthlyPwr_AirCondition.png', x=50, y=None, w=190, h=140, type='', link='')
-    
-    
-    #page 3
     pdf.add_page()
-    pdf.set_xy(20, 30)
-    pdf.image('monthlyStats_total.png', x=35, y=None, w=140, h=65, type='', link='')
+    pdf.set_xy(50, 20)
+    pdf.image(output_dir+'bar_daily_Πλανητάριο.png', x=30, y=None, w=150, h=100, type='', link='')
+    pdf.set_xy(40, 150)
+    pdf.image(output_dir+'bar_daily_Αμφιθέατρο.png', x=30, y=None, w=150, h=100, type='', link='')
     
-    pdf.set_xy(20, 140)
-    pdf.image('10maxPwr_Total.png', x=35, y=None, w=150, h=130, type='', link='')
+    pdf.add_page()
+    pdf.set_xy(50, 20)
+    pdf.image(output_dir+'bar_daily_Κλιματισμος.png', x=30, y=None, w=150, h=100, type='', link='')
+    pdf.set_xy(40, 150)
+    pdf.image(output_dir+'bar_daily_Φωτισμος.png', x=30, y=None, w=150, h=100, type='', link='')
 
-    #page 3
     pdf.add_page()
-    pdf.set_xy(20, 30)
-    pdf.image('monthlyStats_air.png', x=35, y=None, w=140, h=65, type='', link='')
-    
-    pdf.set_xy(20, 140)
-    pdf.image('10maxPwr_AirCondition.png', x=30, y=None, w=150, h=130, type='', link='')    
-    
-    #page 4
-    pdf.add_page()
-    pdf.set_xy(20, 30)
-    
-    pdf.image('dailyStats_Total.png', x=40, y=None, w=120, h=240, type='', link='')
-    
-     #page 4
-    pdf.add_page()
-    pdf.set_xy(20, 30)
-    pdf.image('dailyStats_AirCondition.png', x=40, y=None, w=120, h=240, type='', link='')
-    
-    
-    
-    
-    
-    
-    #page 5
-    pdf.add_page(orientation='L')
-    pdf.set_xy(50, 30)
-    pdf.image('boxplot_Total.png', x=None, y=None, w=190, h=150, type='', link='')
+    pdf.set_xy(50, 20)
+    pdf.image(output_dir+'table_10maxpwr.png', x=40, y=None, w=140, h=160, type='', link='')
 
-    pdf.add_page(orientation='L')
-    pdf.set_xy(50, 30)
-    pdf.image('boxplot_AirCondition.png', x=None, y=None, w=190, h=150, type='', link='')
-    
+    pdf.add_page()
+    pdf.set_xy(50, 20)
+    pdf.image(output_dir+'table_maxnrg_split.png', x=35, y=None, w=150, h=140, type='', link='')
+
+    pdf.add_page()
+    pdf.set_xy(50, 20)
+    pdf.image(output_dir+'line_power.png', x=30, y=None, w=150, h=100, type='', link='')
+    pdf.set_xy(40, 150)
+    pdf.image(output_dir+'bar_compaired.png', x=30, y=None, w=150, h=100, type='', link='')
     
     ##############################
-    pdf.output(filename + ".pdf", 'F')
+    filename = 'Evgenidio_'+str(month)+'_'+str(year)+'.pdf'
+    pdf.output(output_dir+filename , 'F')
     
     return
     
