@@ -93,14 +93,14 @@ def create_pdf(output_dir, pdf_dir, month, year):
     try:
         pdf.add_page()
         pdf.set_xy(50, 20)
-        pdf.image(output_dir+'table_10maxpwr.png', x=40, y=None, w=140, h=160, type='', link='')
+        pdf.image(output_dir+'table_10maxpwr.png', x=40, y=None, w=130, h=220, type='', link='')
     except:
         print("page 8")
 
     try:
         pdf.add_page()
         pdf.set_xy(50, 20)
-        pdf.image(output_dir+'table_maxnrg_split.png', x=35, y=None, w=150, h=140, type='', link='')
+        pdf.image(output_dir+'table_maxnrg_split.png', x=35, y=None, w=160, h=150, type='', link='')
     except:
         print("page 9")
 

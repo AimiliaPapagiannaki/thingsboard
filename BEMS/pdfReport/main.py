@@ -17,6 +17,7 @@ def main():
 
     # Define dates of previous month
     tsnow = datetime.datetime.now()
+    #tsnow = datetime.datetime(2024, 7, 1, 0, 0)
     newts = tsnow-relativedelta(months=1)
     month = newts.month
     year = newts.year
@@ -37,6 +38,7 @@ def main():
     
     end_time = str(int((endm ).timestamp() * 1000))
     start_time = str(int((startm ).timestamp() * 1000))
+    print(start_time, end_time)
 
     end_time2 = str(int((endm2).timestamp() * 1000))
     start_time2 = str(int((startm2).timestamp() * 1000))

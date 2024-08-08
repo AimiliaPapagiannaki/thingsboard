@@ -27,8 +27,8 @@ def create_pwr_table(df, output_dir):
     df2  = df2.reset_index(drop=True)
 
     # Define figure size
-    fig_height = 6
-    fig = plt.figure(figsize=(7, fig_height))
+    fig_height = 10
+    fig = plt.figure(figsize=(12, fig_height))
 
     # Create the first subplot
     ax1 = plt.subplot(211, aspect='equal')
