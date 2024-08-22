@@ -7,6 +7,9 @@ import argparse
 
 
 def get_access_token():
+    """
+    Get the access token from TB
+    """
 
     r = requests.post(config.DATA_URL + "/api/auth/login",
                       json={'username': config.USER, 'password': config.PASS}).json()
@@ -16,6 +19,9 @@ def get_access_token():
 
 
 def get_dev_info(acc_token, device):
+    """
+    Retrieve device information, such as device id and label
+    """
        
     # get devid by serial name
     r1 = requests.get(
@@ -29,6 +35,11 @@ def get_dev_info(acc_token, device):
 
 
 def read_data(acc_token, devid, start_time, end_time, descriptors):
+    """
+    Fetch raw telemetry
+    """
+
+
     url = f"{config.DATA_URL}/api/plugins/telemetry/DEVICE/{devid}/values/timeseries"
 
     df = pd.DataFrame([])
@@ -83,6 +94,9 @@ def read_data(acc_token, devid, start_time, end_time, descriptors):
 
 
 def correct_cumulative_column(df, column_name):
+    """
+    Check for negative delta energy in consecutive values
+    """
     # Extract the column to a list for easier manipulation
     values = df[column_name].tolist()
 
@@ -98,6 +112,9 @@ def correct_cumulative_column(df, column_name):
     return df
 
 def preprocess_nrg(df):
+    """
+    Transform cumulative energy to delta energy
+    """
     for ph in ['A','B','C']:
         # check if there are incidents of negative delta nrg
         if not df.loc[df['cnrg'+ph]<df['cnrg'+ph].shift()].empty:
@@ -108,6 +125,9 @@ def preprocess_nrg(df):
     return df
 
 def parse_args():
+    """
+    Parse input arguments and assign them to relative variables
+    """
     parser = argparse.ArgumentParser(description="Process device telemetry data.")
     parser.add_argument("entityName", help="Name of the entity")
     parser.add_argument("start_time", help="Start time in epoch milliseconds")
@@ -165,14 +185,11 @@ def main(argv):
         devices.append(args.entityName)
         labels.append(label)
         ids.append(devid)
-
-    with pd.ExcelWriter(excel_file_path) as writer:
     
+    with pd.ExcelWriter(excel_file_path) as writer:
         for i in range(0,len(devices)):
-            
             if devices[i] != '102.402.002036': # old meter, has been replaced with 2050
                 df = read_data(acc_token, ids[i],  args.start_time, args.end_time, args.descriptors)
-                
                 if 'cnrgA' in df.columns:
                     df = preprocess_nrg(df)
 
@@ -181,7 +198,7 @@ def main(argv):
                     mean_cols = df.columns.difference(sum_cols)
                     agg_dict = {col: 'mean' for col in mean_cols}
                     agg_dict.update({col: 'sum' for col in sum_cols})
-
+                    
                     df = df.resample(args.interval+'T').agg(agg_dict)
                     df['Total energy (Wh)'] = df['nrgA']+df['nrgB']+df['nrgC']
                 else:
@@ -193,8 +210,9 @@ def main(argv):
                 for col in df.columns:
                     if col in mapcols.keys():
                         df = df.rename(columns={col:mapcols[col]})
+            
             df.index = df.index.tz_localize(None)
-            df.to_excel(writer, sheet_name=label[:8])    
+            df.to_excel(writer, sheet_name=labels[i][:8])    
                 
 
 if __name__ == "__main__":
