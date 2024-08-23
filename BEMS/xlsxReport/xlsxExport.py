@@ -5,7 +5,6 @@ import numpy as np
 import config
 import argparse
 
-
 def get_access_token():
     """
     Get the access token from TB
@@ -37,7 +36,6 @@ def read_data(acc_token, devid, start_time, end_time, descriptors, entity):
     Fetch raw telemetry
     """
 
-
     url = f"{config.DATA_URL}/api/plugins/telemetry/{entity}/{devid}/values/timeseries"
 
     df = pd.DataFrame([])
@@ -66,19 +64,17 @@ def read_data(acc_token, devid, start_time, end_time, descriptors, entity):
         r2 = response.json()
         
         if r2:
-
             tmp = pd.concat(
                 [pd.DataFrame(r2[desc]).rename(columns={'value': desc}).set_index('ts') for desc in r2],
                 axis=1
             )
-            
+
             tmp.reset_index(drop=False, inplace=True)
             tmp['ts'] = pd.to_datetime(tmp['ts'], unit='ms')
             tmp['ts'] = tmp['ts'].dt.tz_localize('utc').dt.tz_convert('Europe/Athens')
             tmp.sort_values(by=['ts'], inplace=True)
             tmp.set_index('ts', inplace=True, drop=True)
             df = pd.concat([df, tmp])
-            
 
             if df.empty:
                 df = pd.DataFrame([])
@@ -90,37 +86,6 @@ def read_data(acc_token, devid, start_time, end_time, descriptors, entity):
         # print('Empty json!')
     return df
 
-
-def correct_cumulative_column(df, column_name):
-    """
-    Check for negative delta energy in consecutive values
-    """
-    # Extract the column to a list for easier manipulation
-    values = df[column_name].tolist()
-
-    # Iterate through the list and correct the values
-    for i in range(1, len(values)):
-        if values[i] < values[i-1]:
-            diff = values[i-1] - values[i]
-            for j in range(i, len(values)):
-                values[j] += diff
-    
-    # Assign the corrected values back to the DataFrame
-    df[column_name] = values
-    return df
-
-def preprocess_nrg(df):
-    """
-    Transform cumulative energy to delta energy
-    """
-    for ph in ['A','B','C']:
-        # check if there are incidents of negative delta nrg
-        if not df.loc[df['cnrg'+ph]<df['cnrg'+ph].shift()].empty:
-            df = correct_cumulative_column(df, 'cnrg'+ph)
-        df['nrg'+ph] = df['cnrg'+ph]-df['cnrg'+ph].shift()
-    df = df.drop(['cnrgA','cnrgB','cnrgC'], axis=1)
-    
-    return df
 
 def parse_args():
     """
@@ -138,7 +103,6 @@ def main(argv):
     args = parse_args()
     # input arguments
     
-
     excel_file_path = 'test.xlsx'
     mapcols = {'clean_nrgA':'Energy A (kWh)',
                'clean_nrgB':'Energy B (kWh)',
@@ -147,15 +111,10 @@ def main(argv):
                }
     acc_token = get_access_token()
 
-    # descriptors = 'cnrgA,cnrgB,cnrgC,pwrA,pwrB,pwrC,vltA,vltB,vltC,curA,curB,curC,cosA,cosB,cosC'
     descriptors = 'clean_nrgA,clean_nrgB,clean_nrgC,totalCleanNrg'
-    # start_time = '1722459600000'
-    # end_time = '1722546000000'
-    # interval = '60'
-    
     labels = []
     ids = []
-
+    entities = []
     for device in args.entityName.split(","):
     # if args.entityName=='building': # if the entire building is selected
     #     # entityId = '889379a0-2e37-11ef-9186-d723be8e1872' # Power meters Eugenideio - deviceGroup
@@ -171,22 +130,26 @@ def main(argv):
             entity = 'device'
         else:
             entity = 'asset'
-        
+        entities.append(entity)
         [devid, label] = get_dev_info(acc_token, device, entity)
-        print(label)
+
+        if device == '102.402.002072':
+            label = 'Σύνολο φορτίων' # rename central meter
         labels.append(label)
         ids.append(devid)
 
     with pd.ExcelWriter(excel_file_path) as writer:
         for i in range(0,len(labels)):
-            df = read_data(acc_token, ids[i],  args.start_time, args.end_time, descriptors, entity.upper())
-            df = df.resample(args.interval).sum()
-            print(df)
+            df = read_data(acc_token, ids[i],  args.start_time, args.end_time, descriptors, entities[i].upper())
+            df = df.resample('1D').max()
+            df['Average hourly active power (kW)'] = df['totalCleanNrg']/(1000*24 )
+            df = df.resample(args.interval).agg({'clean_nrgA':'sum','clean_nrgB':'sum','clean_nrgC':'sum','totalCleanNrg':'sum','Average hourly active power (kW)':'mean'})
             for col in df.columns:
                 if col in mapcols.keys():
                     df[col] = np.round(df[col]/1000,2)
                     df = df.rename(columns={col:mapcols[col]})
-                    
+
+
             df.index = df.index.tz_localize(None)
             df.to_excel(writer, sheet_name=labels[i])    
                 
