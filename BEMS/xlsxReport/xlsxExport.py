@@ -18,29 +18,27 @@ def get_access_token():
     return acc_token   
 
 
-def get_dev_info(acc_token, device):
+def get_dev_info(acc_token, device, entity):
     """
     Retrieve device information, such as device id and label
     """
-       
     # get devid by serial name
     r1 = requests.get(
-        url=config.DATA_URL + "/api/tenant/devices?deviceName=" + device,
+        url=config.DATA_URL + "/api/tenant/"+entity+"s?"+entity+"Name=" + device,
         headers={'Content-Type': 'application/json', 'Accept': '*/*', 'X-Authorization': acc_token}).json()
-    # print(r1)
     label = r1['label']
     devid = r1['id']['id']   
     
     return devid, label
 
 
-def read_data(acc_token, devid, start_time, end_time, descriptors):
+def read_data(acc_token, devid, start_time, end_time, descriptors, entity):
     """
     Fetch raw telemetry
     """
 
 
-    url = f"{config.DATA_URL}/api/plugins/telemetry/DEVICE/{devid}/values/timeseries"
+    url = f"{config.DATA_URL}/api/plugins/telemetry/{entity}/{devid}/values/timeseries"
 
     df = pd.DataFrame([])
     offset = 30 * 86400000 if int(end_time) - int(start_time) > 30 * 86400000 else 86400000
@@ -132,8 +130,7 @@ def parse_args():
     parser.add_argument("entityName", help="Name of the entity")
     parser.add_argument("start_time", help="Start time in epoch milliseconds")
     parser.add_argument("end_time", help="End time in epoch milliseconds")
-    parser.add_argument("interval", help="Resampling interval in minutes")
-    parser.add_argument("descriptors", help="Comma-separated list of descriptors")
+    parser.add_argument("interval", help="Resampling interval in days")
     return parser.parse_args()
 
 
@@ -143,77 +140,55 @@ def main(argv):
     
 
     excel_file_path = 'test.xlsx'
-    mapcols = {'curA':'Current A (Amp)',
-               'curB':'Current B (Amp)',
-               'curC':'Current C (Amp)',
-               'vltA':'Voltage A (volt)',
-               'vltB':'Voltage B (volt)',
-               'vltC':'Voltage C (volt)',
-               'cosA':'Power factor A',
-               'cosB':'Power factor B',
-               'cosC':'Power factor C',
-               'pwrA':'Active power A (W)',
-               'pwrB':'Active power B (W)',
-               'pwrC':'Active power C (W)',
-               'nrgA':'Energy A (Wh)',
-               'nrgB':'Energy B (Wh)',
-               'nrgC':'Energy C (Wh)',
+    mapcols = {'clean_nrgA':'Energy A (kWh)',
+               'clean_nrgB':'Energy B (kWh)',
+               'clean_nrgC':'Energy C (kWh)',
+               'totalCleanNrg': 'Total Energy (kWh)'
                }
     acc_token = get_access_token()
 
     # descriptors = 'cnrgA,cnrgB,cnrgC,pwrA,pwrB,pwrC,vltA,vltB,vltC,curA,curB,curC,cosA,cosB,cosC'
-    # descriptors = 'cnrgA,cnrgB,cnrgC,pwrA,pwrB,pwrC'
+    descriptors = 'clean_nrgA,clean_nrgB,clean_nrgC,totalCleanNrg'
     # start_time = '1722459600000'
     # end_time = '1722546000000'
     # interval = '60'
     
-    devices = []
     labels = []
     ids = []
 
-    if args.entityName=='building': # if the entire building is selected
-        entityId = '889379a0-2e37-11ef-9186-d723be8e1872' # Power meters Eugenideio - deviceGroup
+    for device in args.entityName.split(","):
+    # if args.entityName=='building': # if the entire building is selected
+    #     # entityId = '889379a0-2e37-11ef-9186-d723be8e1872' # Power meters Eugenideio - deviceGroup
+    #     entityId = 'cc6c3fe0-2e37-11ef-9186-d723be8e1872' # Rooms asset group id, to get virtual Rooms
 
-        r1 = requests.get(url=config.DATA_URL + "/api/entityGroup/"+entityId+"/entities?pageSize=1000&page=0",headers={'Content-Type': 'application/json', 
-        'Accept': '*/*', 'X-Authorization': acc_token}).json()
-        for i in range(0,len(r1['data'])):
-            devices.append(r1['data'][i]['name'])
-            labels.append(r1['data'][i]['label'])
-            ids.append(r1['data'][i]['id']['id'])
-    else: # if single device is selected
-        [devid, label] = get_dev_info(acc_token, args.entityName)
-        devices.append(args.entityName)
+    #     r1 = requests.get(url=config.DATA_URL + "/api/entityGroup/"+entityId+"/entities?pageSize=1000&page=0",headers={'Content-Type': 'application/json', 
+    #     'Accept': '*/*', 'X-Authorization': acc_token}).json()
+    #     for i in range(0,len(r1['data'])):
+    #         if r1['data'][i]['name'] != 'Test Room':
+    #             devices.append(r1['data'][i]['name'])
+    #             ids.append(r1['data'][i]['id']['id'])
+        if device == '102.402.002072':
+            entity = 'device'
+        else:
+            entity = 'asset'
+        
+        [devid, label] = get_dev_info(acc_token, device, entity)
+        print(label)
         labels.append(label)
         ids.append(devid)
-    
+
     with pd.ExcelWriter(excel_file_path) as writer:
-        for i in range(0,len(devices)):
-            if devices[i] != '102.402.002036': # old meter, has been replaced with 2050
-                df = read_data(acc_token, ids[i],  args.start_time, args.end_time, args.descriptors)
-                if 'cnrgA' in df.columns:
-                    df = preprocess_nrg(df)
-
-                    # nrg columns are summed, the rest averaged
-                    sum_cols = ['nrgA', 'nrgB', 'nrgC']
-                    mean_cols = df.columns.difference(sum_cols)
-                    agg_dict = {col: 'mean' for col in mean_cols}
-                    agg_dict.update({col: 'sum' for col in sum_cols})
+        for i in range(0,len(labels)):
+            df = read_data(acc_token, ids[i],  args.start_time, args.end_time, descriptors, entity.upper())
+            df = df.resample(args.interval).sum()
+            print(df)
+            for col in df.columns:
+                if col in mapcols.keys():
+                    df[col] = np.round(df[col]/1000,2)
+                    df = df.rename(columns={col:mapcols[col]})
                     
-                    df = df.resample(args.interval+'T').agg(agg_dict)
-                    df['Total energy (Wh)'] = df['nrgA']+df['nrgB']+df['nrgC']
-                else:
-                    df = df.resample(args.interval+'T').mean()
-
-                if 'pwrA' in df.columns:
-                    df['Total active power (W)'] = df['pwrA']+df['pwrB']+df['pwrC']
-
-                for col in df.columns:
-                    if col in mapcols.keys():
-                        df = df.rename(columns={col:mapcols[col]})
-            
             df.index = df.index.tz_localize(None)
-            df.to_excel(writer, sheet_name=labels[i][:8])    
+            df.to_excel(writer, sheet_name=labels[i])    
                 
-
 if __name__ == "__main__":
     sys.exit(main(sys.argv))
