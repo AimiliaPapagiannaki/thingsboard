@@ -4,6 +4,8 @@ import pandas as pd
 import numpy as np
 import config
 import argparse
+import datetime
+import pytz
 
 def get_access_token():
     """
@@ -103,7 +105,16 @@ def main(argv):
     args = parse_args()
     # input arguments
     
-    excel_file_path = 'test.xlsx'
+    # Convert Unix timestamp to a datetime object
+    athens_tz = pytz.timezone('Europe/Athens')
+    st_date = datetime.datetime.utcfromtimestamp(int(args.start_time)/1000)
+    st_date = st_date.astimezone(athens_tz).strftime('%d_%b_%Y')
+    en_date = datetime.datetime.utcfromtimestamp(int(args.end_time)/1000)
+    en_date = en_date.astimezone(athens_tz).strftime('%d_%b_%Y')
+    
+    filename = 'Evgenidio_'+st_date+'_'+en_date+'.xlsx'
+    excel_file_path = config.XLSX_DIR+filename
+    
     mapcols = {'clean_nrgA':'Energy A (kWh)',
                'clean_nrgB':'Energy B (kWh)',
                'clean_nrgC':'Energy C (kWh)',
@@ -149,8 +160,9 @@ def main(argv):
                     df[col] = np.round(df[col]/1000,2)
                     df = df.rename(columns={col:mapcols[col]})
 
-
             df.index = df.index.tz_localize(None)
+            if args.interval=='M':
+                df.index = df.index.strftime('%b-%Y')
             df.to_excel(writer, sheet_name=labels[i])    
                 
 if __name__ == "__main__":
