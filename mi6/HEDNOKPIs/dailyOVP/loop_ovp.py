@@ -23,12 +23,22 @@ from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from email.mime.base import MIMEBase
 from email import encoders
+import logging
 
 REPORTPATH = '/home/azureuser/HEDNOKPIs/daily_OVP/reports/'
 
+
+
+
 def send_email(email_recipient, email_cc, email_bcc, email_subject, email_message, attachment_names):
+    # Setup logging
+    logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
     email_sender = 'support@meazon.com'
+    
     rcpt = email_recipient+email_cc+email_bcc
+    # Logging recipient information
+    logging.debug(f'Recipients: {rcpt}')
+    
     msg = MIMEMultipart()
     msg['From'] = email_sender
     msg['To'] = ", ".join(email_recipient)
@@ -38,23 +48,38 @@ def send_email(email_recipient, email_cc, email_bcc, email_subject, email_messag
     msg.attach(MIMEText(email_message, 'plain'))
     
     for attachment_loc in attachment_names:
-        filename = os.path.basename(attachment_loc)
-        attachment = open(attachment_loc, "rb")
-        part = MIMEBase('application', 'octet-stream')
-        part.set_payload(attachment.read())
-        encoders.encode_base64(part)
-        part.add_header('Content-Disposition', "attachment; filename= %s" % filename)
-        msg.attach(part)
+        try:
+            filename = os.path.basename(attachment_loc)
+            attachment = open(attachment_loc, "rb")
+            part = MIMEBase('application', 'octet-stream')
+            part.set_payload(attachment.read())
+            encoders.encode_base64(part)
+            part.add_header('Content-Disposition', "attachment; filename= %s" % filename)
+            msg.attach(part)
+            attachment.close()
+            logging.debug(f'Attached file: {filename}')
+        except Exception as e:
+            logging.error(f'Failed to attach file {attachment_loc}. Error: {e}')
+            return
         
-    #try:
-    server = smtplib.SMTP('smtp-mail.outlook.com', 587)
-    server.ehlo()
-    server.starttls()
-    server.login('support@meazon.com', 'sup4m3aZ0n!')
-    text = msg.as_string()
-    server.sendmail(email_sender, rcpt, text)
-    print('email sent')
-    server.quit()
+    try:
+        server = smtplib.SMTP('smtp-mail.outlook.com', 587)
+        server.ehlo()
+        server.starttls()
+        #server.login('support@meazon.com', 'sup4m3aZ0n!')
+        server.login('support@meazon.com', 'ege$#^$#jrhrtjYTKJTY54745')
+        
+        text = msg.as_string()
+        server.sendmail(email_sender, rcpt, text)
+        logging.info('Email sent successfully')
+        print('email sent')
+    except smtplib.SMTPException as e:
+        logging.error(f'Failed to send email. SMTP error: {e}')
+    except Exception as e:
+        logging.error(f'Failed to send email. Error: {e}')
+    finally:
+        server.quit()
+    
     #except:
         #print("SMPT server connection error")
     return True
@@ -282,7 +307,22 @@ def ultimatefig(df, day, month, year,monthdayfig,phasedict):
     
     return figname
     
+    
+def rvcplot(df, day, month, year, monthdayfig):
+    plt.figure(figsize=(15, 12))
+    #sns.heatmap(summary.drop(['ΜΡ-093 (Ρ-260 ΝΕΑΣ ΜΑΚΡΗΣ)','ΜΠ-112 (Ρ-350 ΣΠΑΤΩΝ)'],axis=1), cmap='Greens', annot=False, cbar_kws={'label': 'Number of RVC events (sum of phases)'})
+    sns.heatmap(df.T, cmap='Reds', linewidths=0.01, linecolor='gray',annot=False, cbar_kws={'label': 'Πλήθος RVC (άθροισμα 3 φάσεων)'})
 
+    plt.title('Heatmap of RVCs '+day+'/'+month+'/'+year, fontsize=14)
+    plt.xlabel('Ώρες',fontsize=12)
+    # Set the y-axis tick labels to be non-rotated
+    plt.xticks(fontsize=10,rotation=0)
+    plt.yticks(fontsize=10, rotation=0)
+    #plt.savefig('RVC_heatmap_reduced_'+monthdict[month]+'.png', dpi=300,bbox_inches='tight')
+    figname = monthdayfig+'RVC_heatmap_'+year+'_'+month+'_'+day+'.png'
+    plt.savefig(figname, dpi=300,bbox_inches='tight')
+  
+    return figname
 
 
 def main():
@@ -307,11 +347,11 @@ def main():
     end_time = str(int(end_time.timestamp()) * 1000)
     print(start_time,end_time)
     
-    #day = '25'
-    #month = '06'
+    #day = '21'
+    #month = '07'
     #year = '2024'
-    #start_time = '1719262800000'
-    #end_time = '1719349200000'
+    #start_time = '1721509200000'
+    #end_time = '1721595600000'
         
     
     monthdayfig = mainpath+'figures/'+month+'/'
@@ -335,7 +375,7 @@ def main():
 'Accept': '*/*', 'X-Authorization': acc_token}).json()
     
     alltransf = []
-    
+    summaryRVC = pd.DataFrame([])
     for i in range(0,len(r1['data'])):
      #   os.chdir('/home/azureuser/deddhePDF/')
         assetid = r1['data'][i]['id']['id']
@@ -360,8 +400,26 @@ def main():
                     alltransf.append(label)
                 
                     get_ovp.main(device, start_time, end_time, assetname,devid, acc_token, label, mainpath)
+                    
+                    # get RVC events data
+                    df = get_ovp.read_data(acc_token, devid, address,  start_time, end_time, 'rvcA,rvcB,rvcC')
+                    if not df.empty:
+                        df = df.resample('1H').sum()
+                        df.sort_index(inplace=True)
+                        nlabel = label+' ('+assetname+')'
+                        df[nlabel] = df['rvcA']+df['rvcB']+df['rvcC']
+                        df = df[[nlabel]]
+                        summaryRVC = pd.concat([summaryRVC, df], axis=1)
     set1 = set(alltransf)
     
+    if not summaryRVC.empty:
+        Rsum = summaryRVC.sum().sum()
+        summaryRVC.index = summaryRVC.index.hour
+        RVCfigname = rvcplot(summaryRVC, day, month, year, monthdayfig)
+    else:
+        Rsum = 0
+        RVCfigname = ''
+    print('RSUM', summaryRVC.sum().sum())
     
     # Create figures
     files = os.listdir(monthdaypath)
@@ -410,18 +468,38 @@ def main():
             filename = process_info(pwrdf,phasedict,day,month,year) 
                
             dataname = merge_old_xls(filename)
-            #dataname = '/home/azureuser/HEDNOKPIs/daily_OVP/reports/Historical_Overpower_analysis_2024_06_27.xlsx'
-            ## send email to recipient
-            sbj =  'Ημερήσια επισκόπηση συμβάντων υπέρβασης ισχύος των Μ/Σ'
-            msg = 'Συνημμένα θα βρείτε το γράφημα και τις συνοπτικές πληροφορίες σχετικά με τα περιστατικά overpower των Μ/Σ την προηγούμενη ημέρα, καθώς και όλα τα ιστορικά δεδομένα από τον Ιανουάριο μέχρι τώρα. \n\n Powered by Meazon'
             
-            recipients = ['s.christoforos@deddie.gr','g.siapalidis@deddie.gr']
+            #figname = '/home/azureuser/HEDNOKPIs/daily_OVP/figures/07/ovp_boxplot_2024_07_18.png'
+            #dataname = '/home/azureuser/HEDNOKPIs/daily_OVP/reports/Historical_Overpower_analysis_2024_07_18.xlsx'
+            ## send email to recipient
+            sbj =  'Ημερήσια επισκόπηση συμβάντων υπέρβασης ισχύος των Μ/Σ & μεταβολών τάσης (RVC)'
+            msg = 'Συνημμένα θα βρείτε το γράφημα και τις συνοπτικές πληροφορίες σχετικά με τα περιστατικά overpower των Μ/Σ την προηγούμενη ημέρα, καθώς και όλα τα ιστορικά δεδομένα από τον Ιανουάριο μέχρι τώρα.\n Επίσης επισυνάπτεται το ημερήσιο γράφημα τύπου Heatmap που αποτυπώνει το αθροιστικό πλήθος συμβάντων RVC (Rapid Voltage Changes) και στις 3 φάσεις ανά Μ/Σ. \n\n Powered by Meazon'
+            
+            recipients = ['s.christoforos@deddie.gr','g.siapalidis@deddie.gr','e.Nikitopoulou@deddie.gr']
             cc_recipients = ['chr.paraskevas@deddie.gr','g.andreakos@deddie.gr']
             bcc_recipients = ['a.papagiannaki@meazon.com','k.agavanakis@meazon.com','s.koutroubinas@meazon.com']
+            
             #recipients = ['a.papagiannaki@meazon.com']
             #cc_recipients = []
             #bcc_recipients = []
-            send_email(recipients, cc_recipients,bcc_recipients,sbj,msg,[figname,dataname])
+            
+            send_email(recipients, cc_recipients,bcc_recipients,sbj,msg,[figname,RVCfigname,dataname])
+            
+        elif Rsum>0:
+            ## send email to recipient
+            sbj =  'Ημερήσια επισκόπηση συμβάντων μεταβολής τάσης (RVC)'
+            msg = 'Συνημμένα θα βρείτε το ημερήσιο γράφημα τύπου Heatmap που αποτυπώνει το αθροιστικό πλήθος συμβάντων RVC (Rapid Voltage Changes) και στις 3 φάσεις ανά Μ/Σ. \n\n Powered by Meazon'
+            
+            recipients = ['s.christoforos@deddie.gr','g.siapalidis@deddie.gr','e.Nikitopoulou@deddie.gr']
+            cc_recipients = ['chr.paraskevas@deddie.gr','g.andreakos@deddie.gr']
+            bcc_recipients = ['a.papagiannaki@meazon.com','k.agavanakis@meazon.com','s.koutroubinas@meazon.com']
+            
+            #recipients = ['a.papagiannaki@meazon.com']
+            #cc_recipients = []
+            #bcc_recipients = []
+            send_email(recipients, cc_recipients,bcc_recipients,sbj,msg,[RVCfigname])
+        
+       
             ##
 
 if __name__ == '__main__':
