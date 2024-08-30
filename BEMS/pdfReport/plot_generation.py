@@ -243,6 +243,22 @@ def create_bar_plot(df, output_dir, monthdict):
         i += 1
     return month
     
+    
+def create_yearly_monthplot(tmp, output_dir):
+    df = tmp.copy()
+    df.rename(columns={'102.402.002072':'Συνολική κατανάλωση'}, inplace=True)
+    df['Συνολική κατανάλωση'] = df['Συνολική κατανάλωση']/1000
+
+    fig, ax = plt.subplots(figsize=(7.5, 5.0))
+    plt.bar(df.index.month, df['Συνολική κατανάλωση'],color='tab:blue')
+    # plt.xlabel('Days of month')
+    plt.ylabel('Κατανάλωση ενέργειας (MWh)')
+    plt.xticks(df.index.month)
+    plt.title('Συνολική κατανάλωση ανά μήνα',fontsize=16)
+    fig.tight_layout()
+    fig.savefig(output_dir+'bar_yearly.png',dpi=150)
+    
+    
 def create_heatmap(df, output_dir):
     df = df/1000
     #  Reshape the data to have days as rows and hours as columns
@@ -491,7 +507,12 @@ def create_plots(cnrg_data, pwr_data, prev_data, daily_rooms, monthly_rooms, mon
         maxPwrBreakdown(daily_rooms, output_dir)
     except:
         print("Unable to create power  breakdown")
-
+     # Yearly plot to compare monthly energy
+    try:
+        create_yearly_monthplot(monthly_for_enpis, output_dir)
+    except:
+        print("Unable to create yearly barplot")
+        
     # Monthly Line charts with sqmt/occ
     try:
         monthly_for_enpis = create_line_plot_attr(monthly_for_enpis, attrib, df_occ, output_dir)
@@ -502,4 +523,4 @@ def create_plots(cnrg_data, pwr_data, prev_data, daily_rooms, monthly_rooms, mon
     try:
         create_enpis_table(daily_rooms[['ΚΛΙΜΑΤΙΣΜΟΣ','ΦΩΤΙΣΜΟΣ']], monthly_for_enpis, attrib, output_dir)
     except:
-        print("unavle to create enpis table")
+        print("Unable to create enpis table")
