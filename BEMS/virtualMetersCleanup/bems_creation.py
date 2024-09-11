@@ -365,7 +365,7 @@ def send_data(mydf, device, entity):
     for col in ['clean_nrgA','clean_nrgB','clean_nrgC']:
         df[col] = np.round(df[col],2)
        
-    
+    df = df.round(2)
     if not 'totalCleanNrg'  in df.columns:
         df['totalCleanNrg'] = df['clean_nrgA']+df['clean_nrgB']+df['clean_nrgC']
     
@@ -465,7 +465,7 @@ def main():
     
     # month = 7
     year = 2024
-    # for month in [4,5,6]:
+    # for month in [4,5,6,7,8]:
     #     start_time = datetime.datetime(year = year, month=month, day=1)
     #     end_time = start_time + relativedelta(months=1)
     #     tmzn = pytz.timezone('Europe/Athens')    
@@ -475,8 +475,8 @@ def main():
         
     #     end_time = str(int((end_time ).timestamp() * 1000))
     #     start_time = str(int((start_time ).timestamp() * 1000))
-    # start_time = '1719781200000' 
-    # end_time = '1721854800000'
+    # start_time = '1724706000000' 
+    # end_time = '1725829200000' 
 
     
  
@@ -523,7 +523,6 @@ def main():
     
     # write telemetry
     for key,data in filtered.items():
-        
         if key in assetdevs:
             entity = 'ASSET'
             # send_data(data, key, entity)
@@ -533,6 +532,6 @@ def main():
         send_data(data, key, entity)
         
         
-     
+        
 if __name__ == "__main__":
     sys.exit(main())
