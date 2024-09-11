@@ -6,6 +6,7 @@ import config
 import argparse
 import datetime
 import pytz
+import re
 
 def get_access_token():
     """
@@ -19,15 +20,37 @@ def get_access_token():
     return acc_token   
 
 
+def get_devName(acc_token):
+    """
+    Collect all devices' and assets' info
+    """
+    response = requests.get(url=f"{config.DATA_URL}/api/relations/info?fromId={config.EVGENIDIO_ID}&fromType=ASSET",
+    headers={'Content-Type': 'application/json','Accept': '*/*','X-Authorization': acc_token}).json()
+    
+    ent_dict = {}
+    for i in range(0,len(response)):
+        ent_dict[response[i]['to']['id']]={'device':response[i]['toName'],'entityType':response[i]['to']['entityType']}
+
+    return ent_dict
+        
 def get_dev_info(acc_token, device, entity):
     """
     Retrieve device information, such as device id and label
     """
     # get devid by serial name
+    url=config.DATA_URL + "/api/tenant/"+entity+"s?"+entity+"Name=" + device
+    
     r1 = requests.get(
-        url=config.DATA_URL + "/api/tenant/"+entity+"s?"+entity+"Name=" + device,
-        headers={'Content-Type': 'application/json', 'Accept': '*/*', 'X-Authorization': acc_token}).json()
-    label = r1['label']
+        url=f"{config.DATA_URL}/api/tenant/{entity}s",
+        params={entity+"Name": device},
+        headers={
+            'Content-Type': 'application/json',
+            'Accept': '*/*',
+            'X-Authorization': acc_token
+        }
+    ).json()
+    
+    label = r1['label'] 
     devid = r1['id']['id']   
     
     return devid, label
@@ -94,7 +117,7 @@ def parse_args():
     Parse input arguments and assign them to relative variables
     """
     parser = argparse.ArgumentParser(description="Process device telemetry data.")
-    parser.add_argument("entityName", help="Name of the entity")
+    parser.add_argument("entityId", help="Id of the entity")
     parser.add_argument("start_time", help="Start time in epoch milliseconds")
     parser.add_argument("end_time", help="End time in epoch milliseconds")
     parser.add_argument("interval", help="Resampling interval in days")
@@ -107,12 +130,13 @@ def main(argv):
     
     # Convert Unix timestamp to a datetime object
     athens_tz = pytz.timezone('Europe/Athens')
-    st_date = datetime.datetime.utcfromtimestamp(int(args.start_time)/1000)
-    st_date = st_date.astimezone(athens_tz).strftime('%d_%b_%Y')
-    en_date = datetime.datetime.utcfromtimestamp(int(args.end_time)/1000)
-    en_date = en_date.astimezone(athens_tz).strftime('%d_%b_%Y')
+    st_date = datetime.datetime.fromtimestamp(int(args.start_time)/1000, tz=athens_tz)
+    st_date = st_date.strftime('%d_%b_%Y')
+    en_date = datetime.datetime.fromtimestamp(int(args.end_time)/1000, tz=athens_tz)
+    en_date = en_date.strftime('%d_%b_%Y')
     
-    filename = 'Evgenidio_'+st_date+'_'+en_date+'.xlsx'
+    interval_name = 'Daily' if args.interval=='D' else 'Monthly'
+    filename = 'Evgenidio_'+st_date+'_'+en_date+'_'+interval_name+'.xlsx'
     excel_file_path = config.XLSX_DIR+filename
     
     mapcols = {'clean_nrgA':'Energy A (kWh)',
@@ -121,28 +145,20 @@ def main(argv):
                'totalCleanNrg': 'Total Energy (kWh)'
                }
     acc_token = get_access_token()
-
+    
+    
     descriptors = 'clean_nrgA,clean_nrgB,clean_nrgC,totalCleanNrg'
     labels = []
     ids = []
     entities = []
-    for device in args.entityName.split(","):
-    # if args.entityName=='building': # if the entire building is selected
-    #     # entityId = '889379a0-2e37-11ef-9186-d723be8e1872' # Power meters Eugenideio - deviceGroup
-    #     entityId = 'cc6c3fe0-2e37-11ef-9186-d723be8e1872' # Rooms asset group id, to get virtual Rooms
+    entities_info = get_devName(acc_token)
 
-    #     r1 = requests.get(url=config.DATA_URL + "/api/entityGroup/"+entityId+"/entities?pageSize=1000&page=0",headers={'Content-Type': 'application/json', 
-    #     'Accept': '*/*', 'X-Authorization': acc_token}).json()
-    #     for i in range(0,len(r1['data'])):
-    #         if r1['data'][i]['name'] != 'Test Room':
-    #             devices.append(r1['data'][i]['name'])
-    #             ids.append(r1['data'][i]['id']['id'])
-        if device == '102.402.002072':
-            entity = 'device'
-        else:
-            entity = 'asset'
+    for devid in args.entityId.split(","):
+        device = entities_info[devid]['device']
+        entity = entities_info[devid]['entityType']
+        print(device, entity)
         entities.append(entity)
-        [devid, label] = get_dev_info(acc_token, device, entity)
+        [_, label] = get_dev_info(acc_token, device, entity.lower())
 
         if device == '102.402.002072':
             label = 'Σύνολο φορτίων' # rename central meter
@@ -151,10 +167,11 @@ def main(argv):
 
     with pd.ExcelWriter(excel_file_path) as writer:
         for i in range(0,len(labels)):
-            df = read_data(acc_token, ids[i],  args.start_time, args.end_time, descriptors, entities[i].upper())
+            df = read_data(acc_token, ids[i],  args.start_time, args.end_time, descriptors, entities[i])
             df = df.resample('1D').max()
-            df['Average hourly active power (kW)'] = df['totalCleanNrg']/(1000*24 )
-            df = df.resample(args.interval).agg({'clean_nrgA':'sum','clean_nrgB':'sum','clean_nrgC':'sum','totalCleanNrg':'sum','Average hourly active power (kW)':'mean'})
+            # df['Average hourly active power (kW)'] = df['totalCleanNrg']/(1000*24 )
+            # df = df.resample(args.interval).agg({'clean_nrgA':'sum','clean_nrgB':'sum','clean_nrgC':'sum','totalCleanNrg':'sum','Average hourly active power (kW)':'mean'})
+            df = df.resample(args.interval).sum()
             for col in df.columns:
                 if col in mapcols.keys():
                     df[col] = np.round(df[col]/1000,2)
@@ -163,7 +180,9 @@ def main(argv):
             df.index = df.index.tz_localize(None)
             if args.interval=='M':
                 df.index = df.index.strftime('%b-%Y')
-            df.to_excel(writer, sheet_name=labels[i])    
+            clean_sheet_name = re.sub(r'[\/:*?"<>|]', '-', labels[i])
+            clean_sheet_name = clean_sheet_name[:31]
+            df.to_excel(writer, sheet_name=clean_sheet_name)    
                 
 if __name__ == "__main__":
     sys.exit(main(sys.argv))
