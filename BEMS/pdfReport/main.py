@@ -21,6 +21,9 @@ def main():
     newts = tsnow-relativedelta(months=1)
     month = newts.month
     year = newts.year
+    
+    #month = 7
+    #year = 2024 
 
     startm = datetime.datetime(year = year, month=month, day=1)
     endm =  startm + relativedelta(months=1)

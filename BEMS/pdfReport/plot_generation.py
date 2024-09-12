@@ -4,6 +4,7 @@ import pandas as pd
 import numpy as np
 import calendar
 import matplotlib.dates as mdates
+import datetime
 
 
 
@@ -80,14 +81,17 @@ def create_pwr_table(df, output_dir):
 
 def create_table(df, output_dir, specific_loads=None):
     df_filtered = df.copy()
-    total_load = df_filtered.loc['Γενικός διακόπτης', 'Energy consumption (kWh)']
-    df_filtered['Ποσοστό %'] = (df['Energy consumption (kWh)'] / total_load) * 100
+    df_filtered = df_filtered.rename(index={'Γενικός διακόπτης':'Σύνολο φορτίων'})
+     
+    total_load = df_filtered.loc['Σύνολο φορτίων', 'Energy consumption (kWh)']
+    
+    df_filtered['Ποσοστό %'] = (df_filtered['Energy consumption (kWh)'] / total_load) * 100
     df_filtered['Δομική ενότητα'] = df_filtered.index
 
     if specific_loads:
-        df_specific = df_filtered.loc[specific_loads + ['Γενικός διακόπτης']]
+        df_specific = df_filtered.loc[specific_loads + ['Σύνολο φορτίων']]
         specific_loads_sum = df_specific['Energy consumption (kWh)'].sum()
-        others_load = total_load - specific_loads_sum + df_specific.loc['Γενικός διακόπτης', 'Energy consumption (kWh)']
+        others_load = total_load - specific_loads_sum + df_specific.loc['Σύνολο φορτίων', 'Energy consumption (kWh)']
         others_row = pd.DataFrame([[ others_load, (others_load / total_load) * 100, 'Λοιπά Φορτία Εγκατάστασης']], columns=df_specific.columns, index=['Λοιπά Φορτία Εγκατάστασης'])
         df_specific = pd.concat([df_specific, others_row])
     else:
@@ -137,7 +141,8 @@ def create_table(df, output_dir, specific_loads=None):
 def create_pie(df, output_dir, specific_loads=None):
     '''Table and pie plot'''
     df_filtered = df.copy()
-    df_filtered = df[df.index != 'Γενικός διακόπτης']
+    df_filtered = df_filtered.rename(columns={'Γενικός διακόπτης':'Σύνολο φορτίων'})
+    df_filtered = df[df.index != 'Σύνολο φορτίων']
             
     if specific_loads:
         df_specific = df_filtered.loc[specific_loads]
@@ -224,18 +229,19 @@ def create_line_plot_pwr(df, output_dir, monthdict):
 def create_bar_plot(df, output_dir, monthdict):
     '''Bar plot'''
     
-
+    dfcopy = df.copy()
+    dfcopy = dfcopy.rename(columns={'Γενικός διακόπτης':'Σύνολο φορτίων'})
     month = monthdict[calendar.month_name[df.index[0].month]]
 
     colorlist = ['mediumseagreen','royalblue','darkmagenta','chocolate','olivedrab']
     i=0
-    for room in ['Γενικός διακόπτης','Πλανητάριο','Αμφιθέατρο','ΚΛΙΜΑΤΙΣΜΟΣ','ΦΩΤΙΣΜΟΣ']:
+    for room in ['Σύνολο φορτίων','Πλανητάριο','Αμφιθέατρο','Σύνολο Κλιματισμού','Σύνολο Φωτισμού']:
 
         fig, ax = plt.subplots(figsize=(7.5, 5.0))
-        plt.bar(df.index.day, df[room],color=colorlist[i])
+        plt.bar(dfcopy.index.day, dfcopy[room],color=colorlist[i])
         # plt.xlabel('Days of month')
         plt.ylabel('Κατανάλωση ενέργειας (kWh)')
-        plt.xticks(df.index.day)
+        plt.xticks(dfcopy.index.day)
         plt.title(room.capitalize()+': Ημερήσια κατανάλωση ('+month+')',fontsize=16)
         fig.tight_layout()
         fig.savefig(output_dir+'bar_daily_'+room.capitalize()+'.png',dpi=150)
@@ -245,16 +251,18 @@ def create_bar_plot(df, output_dir, monthdict):
     
     
 def create_yearly_monthplot(tmp, output_dir):
+    year = datetime.datetime.now().year
     df = tmp.copy()
-    df.rename(columns={'102.402.002072':'Συνολική κατανάλωση'}, inplace=True)
-    df['Συνολική κατανάλωση'] = df['Συνολική κατανάλωση']/1000
+    df.rename(columns={'102.402.002072':'Σύνολο φορτίων'}, inplace=True)
+    df['Σύνολο φορτίων'] = df['Σύνολο φορτίων']/1000
 
     fig, ax = plt.subplots(figsize=(7.5, 5.0))
-    plt.bar(df.index.month, df['Συνολική κατανάλωση'],color='tab:blue')
-    # plt.xlabel('Days of month')
+    plt.bar(df.index.month, df['Σύνολο φορτίων'],color='cornflowerblue')
+    plt.xlabel('Μήνες')
     plt.ylabel('Κατανάλωση ενέργειας (MWh)')
+    plt.legend([year])
     plt.xticks(df.index.month)
-    plt.title('Συνολική κατανάλωση ανά μήνα',fontsize=16)
+    plt.title('Μηνιαία κατανάλωση τρέχοντος/προηγούμενου έτους',fontsize=16)
     fig.tight_layout()
     fig.savefig(output_dir+'bar_yearly.png',dpi=150)
     
@@ -322,7 +330,7 @@ def create_2month_barplot(prev, curr, output_dir, monthdict):
 def maxPwrBreakdown(df, output_dir):
     maxnrg = df['Γενικός διακόπτης'].max()
     maxdf = df.loc[df['Γενικός διακόπτης']==maxnrg]
-    maxdf = maxdf.drop(['ΚΛΙΜΑΤΙΣΜΟΣ','ΦΩΤΙΣΜΟΣ'],axis=1)
+    maxdf = maxdf.drop(['ΚΛΙΜΑΤΙΣΜΟΣ','ΦΩΤΙΣΜΟΣ','Σύνολο Φωτισμού','Σύνολο Κλιματισμού'],axis=1)
     maxdate = maxdf.index[0]# index of day with max energy consumption
 
     maxdf = maxdf.T
@@ -374,8 +382,8 @@ def maxPwrBreakdown(df, output_dir):
 def create_line_plot_attr(df, attrib, df_occ, output_dir):
     
     # divide consumption with respective attribute
-    df.rename(columns={'102.402.002072':'Γενικός διακόπτης'}, inplace=True)
-    df['kWh/τ.μ. Κτιρίου'] = df['Γενικός διακόπτης']/attrib['sqmt']
+    df.rename(columns={'102.402.002072':'Σύνολο φορτίων'}, inplace=True)
+    df['kWh/τ.μ. Κτιρίου'] = df['Σύνολο φορτίων']/attrib['sqmt']
 
     df = pd.concat([df,df_occ], axis=1)
     df['kWh/ώρα χρήσης (Αμφιθέατρο)'] = df['Αμφιθέατρο']/df['Χρήση Αμφιθέατρο']
@@ -407,14 +415,14 @@ def create_enpis_table(loads_df, all_df, attrib, output_dir):
     
     enpis = {}
     enpis['Συνολική κατανάλωση (kWh)/τ.μ. εγκατάστασης'] = all_df['kWh/τ.μ. Κτιρίου'].max()
-    enpis['Συνολική κατανάλωση Κλιματισμού (kWh)/τ.μ. εγκατάστασης'] = all_df['ΚΛΙΜΑΤΙΣΜΟΣ'].max()/attrib['sqmt']
-    enpis['Συνολική κατανάλωση Φωτισμού (kWh)/τ.μ. εγκατάστασης'] = all_df['ΦΩΤΙΣΜΟΣ'].max()/attrib['sqmt']
+    enpis['Συνολική κατανάλωση Κλιματισμού (kWh)/τ.μ. εγκατάστασης'] = all_df['Σύνολο Κλιματισμού'].max()/attrib['sqmt']
+    enpis['Συνολική κατανάλωση Φωτισμού (kWh)/τ.μ. εγκατάστασης'] = all_df['Σύνολο Φωτισμού'].max()/attrib['sqmt']
     enpis['Μηνιαίες ώρες λειτουργίας Πλανηταρίου'] = all_df['Χρήση Πλανητάριο'].max()
     enpis['Μηνιαίες ώρες λειτουργίας Αμφιθεάτρου'] = all_df['Χρήση Αμφιθέατρο'].max()
     enpis['Κατανάλωση ανά ώρα χρήσης Πλανηταρίου (kWh)'] = all_df['kWh/ώρα χρήσης (Πλανητάριο)'].max()
     enpis['Κατανάλωση ανά ώρα χρήσης Αμφιθεάτρου (kWh)'] = all_df['kWh/ώρα χρήσης (Αμφιθέατρο)'].max()
-    enpis['Κατανάλωση Πλανηταρίου & Αμφιθεάτρου/Συνολική (%)'] = (all_df['Πλανητάριο'].max()+all_df['Αμφιθέατρο'].max())/all_df['Γενικός διακόπτης'].max()
-    enpis['Μηνιαίο ενεργειακό κόστος εγκατάστασης (Ευρώ)'] = all_df['Γενικός διακόπτης'].max()*attrib['budget']
+    enpis['Κατανάλωση Πλανηταρίου & Αμφιθεάτρου/Συνολική (%)'] = 100*(all_df['Πλανητάριο'].max()+all_df['Αμφιθέατρο'].max())/all_df['Σύνολο φορτίων'].max()
+    enpis['Μηνιαίο ενεργειακό κόστος εγκατάστασης (Ευρώ)'] = all_df['Σύνολο φορτίων'].max()*attrib['budget']
     enpis = pd.DataFrame(list(enpis.items()), columns=['EnPis', 'Τιμή'])
     enpis['Τιμή'] = enpis['Τιμή'].round(decimals=2)
     
@@ -464,6 +472,10 @@ def create_plots(cnrg_data, pwr_data, prev_data, daily_rooms, monthly_rooms, mon
     
     # Rooms breakdown tables & pie charts
     specific_loads = ['Πλανητάριο', 'Αμφιθέατρο']
+    
+    # Create total AC and total Light loads
+    daily_rooms['Σύνολο Κλιματισμού'] = daily_rooms['ΚΛΙΜΑΤΙΣΜΟΣ']+daily_rooms['ΨΥΚΤΕΣ']
+    daily_rooms['Σύνολο Φωτισμού'] = daily_rooms['ΦΩΤΙΣΜΟΣ']+daily_rooms['Εξωτερικός Φωτισμός']
     
     try:
         create_table(monthly_rooms, output_dir)
@@ -518,9 +530,9 @@ def create_plots(cnrg_data, pwr_data, prev_data, daily_rooms, monthly_rooms, mon
         monthly_for_enpis = create_line_plot_attr(monthly_for_enpis, attrib, df_occ, output_dir)
     except:
         print("Unable to create lineplot/enpis")
-
+    
     # Table with EnPis
     try:
-        create_enpis_table(daily_rooms[['ΚΛΙΜΑΤΙΣΜΟΣ','ΦΩΤΙΣΜΟΣ']], monthly_for_enpis, attrib, output_dir)
+        create_enpis_table(daily_rooms[['Σύνολο Κλιματισμού','Σύνολο Φωτισμού']], monthly_for_enpis, attrib, output_dir)
     except:
         print("Unable to create enpis table")

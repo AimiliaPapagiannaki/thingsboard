@@ -2,6 +2,7 @@ import requests
 import pandas as pd
 import numpy as np
 import json
+import datetime
 
 def get_access_token(address):
 
@@ -12,12 +13,13 @@ def get_access_token(address):
     return acc_token
 
 
+
+
 def get_devid(address, device, entity):
     """
     Retrieves the device ID for the given device name.
     """
     acc_token = get_access_token(address)
-    
     response = requests.get(
         url=f"{address}/api/tenant/{entity}s",
         params={entity+"Name": device},
@@ -31,6 +33,7 @@ def get_devid(address, device, entity):
 
 def get_attr(address, acc_token, devid, month, start_time, end_time, tmzn):
     
+    year = datetime.datetime.now().year
     attrib = {}
     # get sqmt
     attr = 'unitsSquareMeters'
@@ -44,8 +47,8 @@ def get_attr(address, acc_token, devid, month, start_time, end_time, tmzn):
     r2 = requests.get(
         url=address + "/api/plugins/telemetry/ASSET/" + devid + "/values/attributes?keys="+attr,
         headers={'Content-Type': 'application/json', 'Accept': '*/*', 'X-Authorization': acc_token}).json()
-    # attrib['budget'] = json.loads(r2[0]['value'])['kiloWattCost'][month-1]
-    attrib['budget'] = r2[0]['value']['kiloWattCost'][month-1]
+    # attrib['budget'] = json.loads(r2[0]['value'])['kiloWattCost'][month-1]  
+    attrib['budget'] = r2[0]['value'][str(year)]['kiloWattCost'][month-1]
     
 
 
@@ -70,6 +73,7 @@ def get_attr(address, acc_token, devid, month, start_time, end_time, tmzn):
     )
     r2 = response.json()
     occ_raw = r2['occupancy']
+    
     occ_processed = []
     for entry in occ_raw:
         ts = entry['ts']
@@ -86,7 +90,7 @@ def get_attr(address, acc_token, devid, month, start_time, end_time, tmzn):
     for col in df_occ.columns:
         df_occ[col] = pd.to_numeric(df_occ[col], errors='coerce')
     df_occ.rename(columns={'Αμφιθέατρο':'Χρήση Αμφιθέατρο','Πλανητάριο':'Χρήση Πλανητάριο'}, inplace=True)
-    df_occ = df_occ.resample('MS').max()
+    df_occ = df_occ.resample('MS').first()
     
 
     return attrib, df_occ
@@ -148,8 +152,7 @@ def retrieve_raw(url, start_time, end_time, tmzn, start_time2, end_time2, month)
     [attrib, df_occ] = get_attr(url, acc_token, buildingid, month, zero_start_time, end_time, tmzn)
 
 
-
-    listdevs = ['102.402.002072','ΚΛΙΜΑΤΙΣΜΟΣ','ΦΩΤΙΣΜΟΣ',
+    listdevs = ['102.402.002072','ΚΛΙΜΑΤΙΣΜΟΣ','ΦΩΤΙΣΜΟΣ','ΨΥΚΤΕΣ',
                 'Κέντρο Ερευνας & Τεχνολογίας (ΚΕΤ)',
                 'Αμφιθέατρο',
                 'Πλανητάριο',
@@ -163,13 +166,12 @@ def retrieve_raw(url, start_time, end_time, tmzn, start_time2, end_time2, month)
                 'Αποθήκη Ε',
                 'Εξωτερικός Φωτισμός',
                 'Λοιπά Φορτία Eγκατάστασης']
-    devices_subset = listdevs[:3]
+    devices_subset = listdevs[:4]
     raw_dfs = {}
 
     
     
     for device in listdevs:
-        
         entity = 'device' if (device in devices_subset) else 'asset'
         devid = get_devid(url, device, entity)
 

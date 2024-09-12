@@ -55,7 +55,7 @@ def preprocess_data(raw):
     pwr_data = pwr_data/1000 # kW
 
     # daily_loads = energy_data[['ΚΛΙΜΑΤΙΣΜΟΣ','ΦΩΤΙΣΜΟΣ']].copy()
-    daily_rooms = energy_data.drop(['ΚΛΙΜΑΤΙΣΜΟΣ','ΦΩΤΙΣΜΟΣ'],axis=1).copy()
+    daily_rooms = energy_data.drop(['ΚΛΙΜΑΤΙΣΜΟΣ','ΦΩΤΙΣΜΟΣ','ΨΥΚΤΕΣ'],axis=1).copy()
 
     monthly_rooms = daily_rooms.copy().resample('1M').sum()
     monthly_rooms = monthly_rooms.T
