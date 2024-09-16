@@ -7,6 +7,7 @@ import os
 import pandas as pd
 import numpy as np
 from dateutil.relativedelta import relativedelta
+import time
 
 
 def write_df(df, address, acc_token, devtoken):
@@ -54,18 +55,7 @@ def get_dev_info(device, address):
     return devid,acc_token,label, devtoken
     
 
-def get_attr(acc_token,devid,address):
-    r2 = requests.get(
-        url=address + "/api/plugins/telemetry/DEVICE/" + devid + "/values/attributes?keys=nominal",
-        headers={'Content-Type': 'application/json', 'Accept': '*/*', 'X-Authorization': acc_token}).json()
-    
-    nominal = r2[0]['value']
-
-    return nominal
-
-
 def read_data(acc_token, devid, address, start_time, end_time, descriptors):
-
         
     r2 = requests.get(
         url=address + "/api/plugins/telemetry/DEVICE/" + devid + "/values/timeseries?keys=" + descriptors + "&startTs=" + start_time + "&endTs=" + end_time + "&agg=NONE&limit=1000000",
@@ -91,32 +81,22 @@ def read_data(acc_token, devid, address, start_time, end_time, descriptors):
     return df
 
 
-def detect_alarms(address, start_time, end_time, devid, acc_token, device,devtoken):
-    descriptors = 'vltA,vltB,vltC,curA,curB,curC'
+def detect_alarms(address, start_time, end_time, devid, acc_token, device):
+    """
+    Check if the sum of absulote V-V angles exceeds the threshold of 360+-0.5 degrees
+    """
     
-    nominal = get_attr(acc_token,devid,address)
-        
-    df = read_data(acc_token, devid, address,  start_time, end_time, descriptors)
-    if not df.empty:
-        df.sort_index(inplace=True)
+    df.sort_index(inplace=True)
 
-         # calculate new variables
-        for ph in ['A','B','C']:
-            df['apwr'+ph] = df['vlt'+ph]*df['cur'+ph]
+    df['sumAngles'] = np.abs(df['angleAB'])+np.abs(df['angleBC'])+np.abs(df['angleAC'])
 
-        nomphase = 1000*np.round(nominal/3,2)
-
-        # Find power alarms
-        for ph in ['A','B','C']:
-            df['overpwr'+ph] = np.nan
-            df.loc[df['apwr'+ph]>0.8*nomphase, 'overpwr'+ph] = df['apwr'+ph]
-        
-        df = df[['overpwrA','overpwrB','overpwrC']]
-        df = df.dropna(how='all')
-        if not df.empty:
-            print('Alarm for device ',device)
-            print(df)
-            write_df(df, address, acc_token, devtoken)
+    df = df.loc[(df['sumAngles']>360.5) | (df['sumAngles']<359.5)]
+    
+    if ((not df.empty) & (len(df)>1)):
+        # Raise alarm
+        print('Alarm for device ',device)
+        print(df)
+        #write_df(df, address, acc_token, devtoken)
         
 
 
@@ -127,7 +107,7 @@ def main():
     end_time = end_time - datetime.timedelta(minutes=end_time.minute, seconds=end_time.second,
                                                  microseconds=end_time.microsecond)
     
-    start_time = end_time +relativedelta(hours=-1)
+    start_time = end_time +relativedelta(minutes=-5)
     print(start_time, end_time)
     start_time = str(int(start_time.timestamp()) * 1000)
     end_time = str(int(end_time.timestamp()) * 1000)
@@ -162,8 +142,10 @@ def main():
                     # call export KPIs function
                     try:
                         [devid, acc_token, label, devtoken] = get_dev_info(device, address)                   
-                        
-                        detect_alarms(address, start_time, end_time, devid, acc_token, device, devtoken)
+                        descriptors = 'angleAB,angleAC,angleBC'    
+                        df = read_data(acc_token, devid, address,  start_time, end_time, descriptors)
+                        if not df.empty:
+                            detect_alarms(address, start_time, end_time, devid, acc_token, device, devtoken)
                     except Exception as e:
                         print(f"Error reading data for device {device}: {e}")
                         continue
