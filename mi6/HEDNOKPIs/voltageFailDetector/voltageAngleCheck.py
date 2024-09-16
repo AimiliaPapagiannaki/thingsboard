@@ -115,7 +115,8 @@ def main():
                                                 microseconds=end_time.microsecond)
     
     start_time = end_time +relativedelta(minutes=-10)
-    print(start_time, end_time)
+    if start_time.minute==0:
+        print(start_time, end_time)
     start_time = str(int(start_time.timestamp()) * 1000)
     end_time = str(int(end_time.timestamp()) * 1000)
 
