@@ -11,6 +11,9 @@ import time
 
 
 def write_df(df, address, acc_token, devtoken):
+    """
+    Send telemetry to TB
+    """
     for col in df.columns:
         tmp = df[[col]].copy().dropna()
         if not tmp.empty:
@@ -32,7 +35,9 @@ def write_df(df, address, acc_token, devtoken):
 
         
 def get_dev_info(device, address):
-    
+    """
+    Get device information
+    """
     r = requests.post(address + "/api/auth/login",
                       json={'username': 'meazonpro@meazon.com', 'password': 'meazonpro1'}).json()
     
@@ -56,7 +61,9 @@ def get_dev_info(device, address):
     
 
 def read_data(acc_token, devid, address, start_time, end_time, descriptors):
-        
+    """
+    Retrieve raw data from TB
+    """
     r2 = requests.get(
         url=address + "/api/plugins/telemetry/DEVICE/" + devid + "/values/timeseries?keys=" + descriptors + "&startTs=" + start_time + "&endTs=" + end_time + "&agg=NONE&limit=1000000",
         headers={'Content-Type': 'application/json', 'Accept': '*/*', 'X-Authorization': acc_token}).json()
@@ -81,7 +88,7 @@ def read_data(acc_token, devid, address, start_time, end_time, descriptors):
     return df
 
 
-def detect_alarms(address, start_time, end_time, devid, acc_token, device):
+def detect_alarms(df, address, start_time, end_time, devid, acc_token, device, devtoken):
     """
     Check if the sum of absulote V-V angles exceeds the threshold of 360+-0.5 degrees
     """
@@ -91,12 +98,12 @@ def detect_alarms(address, start_time, end_time, devid, acc_token, device):
     df['sumAngles'] = np.abs(df['angleAB'])+np.abs(df['angleBC'])+np.abs(df['angleAC'])
 
     df = df.loc[(df['sumAngles']>360.5) | (df['sumAngles']<359.5)]
-    
-    if ((not df.empty) & (len(df)>1)):
+    df = df[['sumAngles']]
+    if ((not df.empty) & (len(df)>2)):
         # Raise alarm
         print('Alarm for device ',device)
         print(df)
-        #write_df(df, address, acc_token, devtoken)
+        write_df(df, address, acc_token, devtoken)
         
 
 
@@ -105,18 +112,20 @@ def main():
     #define start - end date
     end_time = datetime.datetime.now()
     end_time = end_time - datetime.timedelta(minutes=end_time.minute, seconds=end_time.second,
-                                                 microseconds=end_time.microsecond)
+                                                microseconds=end_time.microsecond)
     
-    start_time = end_time +relativedelta(minutes=-5)
+    start_time = end_time +relativedelta(minutes=-10)
     print(start_time, end_time)
     start_time = str(int(start_time.timestamp()) * 1000)
     end_time = str(int(end_time.timestamp()) * 1000)
 
+    # start_time = '1725990600000'
+    # end_time = '1725991200000'
     
     address = 'http://localhost:8080'
     # address = 'https://mi6.meazon.com'
     r = requests.post(address + "/api/auth/login",
-                      json={'username': 'meazonpro@meazon.com', 'password': 'meazonpro1'}).json()
+                    json={'username': 'meazonpro@meazon.com', 'password': 'meazonpro1'}).json()
     
     acc_token = 'Bearer' + ' ' + r['token']
     
@@ -138,18 +147,17 @@ def main():
                 device = r2[j]['toName']
                 if device[:3]=='102':
                     #print(device)
-                               
+                            
                     # call export KPIs function
                     try:
                         [devid, acc_token, label, devtoken] = get_dev_info(device, address)                   
                         descriptors = 'angleAB,angleAC,angleBC'    
                         df = read_data(acc_token, devid, address,  start_time, end_time, descriptors)
                         if not df.empty:
-                            detect_alarms(address, start_time, end_time, devid, acc_token, device, devtoken)
+                            detect_alarms(df, address, start_time, end_time, devid, acc_token, device, devtoken)
                     except Exception as e:
                         print(f"Error reading data for device {device}: {e}")
                         continue
-
 
 if __name__ == '__main__':
     sys.exit(main())
