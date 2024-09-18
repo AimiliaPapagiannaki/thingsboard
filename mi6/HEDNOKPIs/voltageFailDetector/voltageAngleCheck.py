@@ -7,7 +7,53 @@ import os
 import pandas as pd
 import numpy as np
 from dateutil.relativedelta import relativedelta
-import time
+import smtplib
+from email.message import EmailMessage
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
+from email.mime.base import MIMEBase
+from email import encoders
+import logging
+
+def send_email(device, label):
+    email_subject =  'Ειδοποίηση για πτώση τάσης/καμμένη ασφάλεια'
+    email_message = 'Alarm στον μετασχηματιστή '+label+' με serial number '+device+'. \n\n Πιθανώς καμμένη ασφάλεια, ενεργήστε άμεσα για την αποκατάσταση του προβλήματος.'
+    email_recipient = ['a.papagiannaki@meazon.com','s.koutroubinas@meazon.com']
+
+    # Setup logging
+    email_sender = 'support@meazon.com'
+    rcpt = email_recipient
+    # Logging recipient information
+    logging.debug(f'Recipients: {rcpt}')
+    
+    msg = MIMEMultipart()
+    msg['From'] = email_sender
+    msg['To'] = ", ".join(email_recipient)
+    msg['Subject'] = email_subject
+
+    msg.attach(MIMEText(email_message, 'plain'))
+            
+    try:
+        server = smtplib.SMTP('smtp-mail.outlook.com', 587)
+        server.ehlo()
+        server.starttls()
+        #server.login('support@meazon.com', 'sup4m3aZ0n!')
+        server.login('support@meazon.com', 'ege$#^$#jrhrtjYTKJTY54745')
+        
+        text = msg.as_string()
+        server.sendmail(email_sender, rcpt, text)
+        logging.info('Email sent successfully')
+        print('email sent')
+    except smtplib.SMTPException as e:
+        logging.error(f'Failed to send email. SMTP error: {e}')
+    except Exception as e:
+        logging.error(f'Failed to send email. Error: {e}')
+    finally:
+        server.quit()
+    
+    #except:
+        #print("SMPT server connection error")
+    return True
 
 
 def write_df(df, address, acc_token, devtoken):
@@ -27,8 +73,7 @@ def write_df(df, address, acc_token, devtoken):
                 newdict['values'] = { k: v for k, v in value.items() if v == v }
                 l.append(newdict)
             # write to json and send telemetry to TB
-            my_json = json.dumps(l)     
-            print(my_json)       
+            my_json = json.dumps(l)          
             r = requests.post(url=address+"/api/v1/" + devtoken + "/telemetry",data=my_json, headers={'Content-Type': 'application/json', 'Accept': '*/*',
                                                         'X-Authorization': acc_token})
 
@@ -56,9 +101,23 @@ def get_dev_info(device, address):
         headers={'Content-Type': 'application/json', 'Accept': '*/*', 'X-Authorization': acc_token}).json()
     devtoken = r1['credentialsId']
 
-    
     return devid,acc_token,label, devtoken
-    
+
+def read_latest(acc_token, devid, address, end_time, descriptors):
+    """
+    Retrieve raw data from TB
+    """
+    r2 = requests.get(
+        url=address + "/api/plugins/telemetry/DEVICE/" + devid + "/values/timeseries?keys=" + descriptors + "&startTs=0&endTs=" + end_time + "&agg=NONE&limit=1",
+        headers={'Content-Type': 'application/json', 'Accept': '*/*', 'X-Authorization': acc_token}).json()
+    df = pd.DataFrame([])
+    if r2:
+        for desc in r2.keys():
+            df = pd.DataFrame(r2[desc])
+            df.set_index('ts', inplace=True)
+            df.columns = [str(desc)]
+    return df
+
 
 def read_data(acc_token, devid, address, start_time, end_time, descriptors):
     """
@@ -87,39 +146,85 @@ def read_data(acc_token, devid, address, start_time, end_time, descriptors):
         # print('Empty json!')
     return df
 
-def check_phase_deviation(df, device):
+def legacy_info(df, device, legadict, val):
+        
+    ind = df.index[-1]
+    legadict[device] = {'ts':str(ind),'status':val}
+    print(legadict)
+    # Write the data to the file
+    with open('legacy_info.json', 'w', encoding='utf-8') as file:
+        json.dump(legadict, file, ensure_ascii=False, indent=4)
+
+    return legadict
+
+def check_phase_deviation(df):
+    """
+    Check if the each phase angle exceeds 120 +- 2 degrees
+    """
     df1 = df.loc[(np.abs(df['angleAB'])>122) | (np.abs(df['angleAB'])<118)].copy()
     df2 = df.loc[(np.abs(df['angleAC'])>122) | (np.abs(df['angleAC'])<118)].copy()
     df3 = df.loc[(np.abs(df['angleBC'])>122) | (np.abs(df['angleBC'])<118)].copy()
     
     
-    if ((not df1.empty) | (not df1.empty) | (not df3.empty)):
-        print('Alarm for device ',device)
-        print(df)
+    if ((not df1.empty) | (not df2.empty) | (not df3.empty)):
+        failure = True
+    else:
+        failure = False
+    return failure
 
 
-def detect_alarms(df, address, start_time, end_time, devid, acc_token, device, devtoken,label):
+def check_sum_phases(df):
     """
     Check if the sum of absulote V-V angles exceeds the threshold of 360+-0.5 degrees
     """
-    
-    df.sort_index(inplace=True)
-    check_phase_deviation(df.copy(), device)
-    
     df['sumAngles'] = np.abs(df['angleAB'])+np.abs(df['angleBC'])+np.abs(df['angleAC'])
 
     df = df.loc[((df['sumAngles']>360.5) | (df['sumAngles']<359.5))]
     df = df[['sumAngles']]
     if ((not df.empty) & (len(df)>2)):
         # Raise alarm
-        print('Alarm for device ',device, label)
-        print(df)
-        write_df(df, address, acc_token, devtoken)
+        sum_failure = True
+    else:
+        sum_failure = False
+    return df,sum_failure
+    
+def detect_alarms(df, address, acc_token, device, devtoken,label, legadict):
+    """
+    Check if V-V rules
+    """
+
+    df.sort_index(inplace=True)
+    phase_failure = check_phase_deviation(df.copy())
+    [df, sum_failure] = check_sum_phases(df.copy())
+    
+    if (phase_failure or sum_failure):
+        if device in legadict.keys():
+            if legadict[device]['status']=='0':
+                legadict = legacy_info(df, device, legadict,'1')
+                write_df(df, address, acc_token, devtoken)
+                print('Alarm for device ', device, label)
+                send_email(device, label)
+        else:
+            legadict = legacy_info(df, device, legadict,'1')
+            write_df(df, address, acc_token, devtoken)
+            print('Alarm for device ', device, label)
+            send_email(device, label)
+    else:
+        if device in legadict.keys():
+            if legadict[device]['status']=='1':
+                print('Alarm finished for device ', device, label)
+                legadict = legacy_info(df, device, legadict,'0')
+        
         
 
 
 def main():
-    
+    filename = 'legacy_info.json'
+    if os.path.isfile(filename):
+        with open(filename, 'r', encoding='utf-8') as file:
+            legadict = json.load(file)
+    else:
+        legadict = {}
     #define start - end date
     end_time = datetime.datetime.now()
     end_time = end_time - datetime.timedelta(seconds=end_time.second,
@@ -165,9 +270,10 @@ def main():
                     #try:
                     [devid, acc_token, label, devtoken] = get_dev_info(device, address)                   
                     descriptors = 'angleAB,angleAC,angleBC'    
+                    # latest_status = read_latest(acc_token, devid, address, end_time, 'alarm_status')
                     df = read_data(acc_token, devid, address,  start_time, end_time, descriptors)
                     if not df.empty:
-                        detect_alarms(df, address, start_time, end_time, devid, acc_token, device, devtoken,label)
+                        detect_alarms(df, address, acc_token, device, devtoken, label, legadict)
                     #except Exception as e:
                     #    print(f"Error reading data for device {device}: {e}")
                     #    continue
