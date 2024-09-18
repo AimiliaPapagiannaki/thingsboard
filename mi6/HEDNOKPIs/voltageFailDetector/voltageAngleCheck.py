@@ -87,21 +87,32 @@ def read_data(acc_token, devid, address, start_time, end_time, descriptors):
         # print('Empty json!')
     return df
 
+def check_phase_deviation(df, device):
+    df1 = df.loc[(np.abs(df['angleAB'])>122) | (np.abs(df['angleAB'])<118)].copy()
+    df2 = df.loc[(np.abs(df['angleAC'])>122) | (np.abs(df['angleAC'])<118)].copy()
+    df3 = df.loc[(np.abs(df['angleBC'])>122) | (np.abs(df['angleBC'])<118)].copy()
+    
+    
+    if ((not df1.empty) | (not df1.empty) | (not df3.empty)):
+        print('Alarm for device ',device)
+        print(df)
 
-def detect_alarms(df, address, start_time, end_time, devid, acc_token, device, devtoken):
+
+def detect_alarms(df, address, start_time, end_time, devid, acc_token, device, devtoken,label):
     """
     Check if the sum of absulote V-V angles exceeds the threshold of 360+-0.5 degrees
     """
     
     df.sort_index(inplace=True)
-
+    check_phase_deviation(df.copy(), device)
+    
     df['sumAngles'] = np.abs(df['angleAB'])+np.abs(df['angleBC'])+np.abs(df['angleAC'])
 
-    df = df.loc[(df['sumAngles']>360.5) | (df['sumAngles']<359.5)]
+    df = df.loc[((df['sumAngles']>360.5) | (df['sumAngles']<359.5))]
     df = df[['sumAngles']]
     if ((not df.empty) & (len(df)>2)):
         # Raise alarm
-        print('Alarm for device ',device)
+        print('Alarm for device ',device, label)
         print(df)
         write_df(df, address, acc_token, devtoken)
         
@@ -111,12 +122,13 @@ def main():
     
     #define start - end date
     end_time = datetime.datetime.now()
-    end_time = end_time - datetime.timedelta(minutes=end_time.minute, seconds=end_time.second,
+    end_time = end_time - datetime.timedelta(seconds=end_time.second,
                                                 microseconds=end_time.microsecond)
     
     start_time = end_time +relativedelta(minutes=-10)
+    
     if start_time.minute==0:
-        print(start_time, end_time)
+        print('Time running script:',start_time, end_time)
     start_time = str(int(start_time.timestamp()) * 1000)
     end_time = str(int(end_time.timestamp()) * 1000)
 
@@ -150,15 +162,15 @@ def main():
                     #print(device)
                             
                     # call export KPIs function
-                    try:
-                        [devid, acc_token, label, devtoken] = get_dev_info(device, address)                   
-                        descriptors = 'angleAB,angleAC,angleBC'    
-                        df = read_data(acc_token, devid, address,  start_time, end_time, descriptors)
-                        if not df.empty:
-                            detect_alarms(df, address, start_time, end_time, devid, acc_token, device, devtoken)
-                    except Exception as e:
-                        print(f"Error reading data for device {device}: {e}")
-                        continue
+                    #try:
+                    [devid, acc_token, label, devtoken] = get_dev_info(device, address)                   
+                    descriptors = 'angleAB,angleAC,angleBC'    
+                    df = read_data(acc_token, devid, address,  start_time, end_time, descriptors)
+                    if not df.empty:
+                        detect_alarms(df, address, start_time, end_time, devid, acc_token, device, devtoken,label)
+                    #except Exception as e:
+                    #    print(f"Error reading data for device {device}: {e}")
+                    #    continue
 
 if __name__ == '__main__':
     sys.exit(main())
