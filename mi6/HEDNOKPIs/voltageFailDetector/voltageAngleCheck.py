@@ -2,6 +2,7 @@
 import sys
 import requests
 import json
+import csv
 import datetime
 import os
 import pandas as pd
@@ -14,11 +15,14 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.base import MIMEBase
 from email import encoders
 import logging
-
+BASEPATH = '/home/azureuser/HEDNOKPIs/voltageFailDetector/'
 def send_email(device, label):
+    """
+    Send informative email
+    """
     email_subject =  'Ειδοποίηση για πτώση τάσης/καμμένη ασφάλεια'
-    email_message = 'Alarm στον μετασχηματιστή '+label+' με serial number '+device+'. \n\n Πιθανώς καμμένη ασφάλεια, ενεργήστε άμεσα για την αποκατάσταση του προβλήματος.'
-    email_recipient = ['a.papagiannaki@meazon.com','s.koutroubinas@meazon.com']
+    email_message = 'Alarm στον μετασχηματιστή '+label+' με serial number '+device+'. \n\n Πιθανώς καμμένη ασφάλεια στη μέση τάση, ενεργήστε άμεσα για την αποκατάσταση του προβλήματος.'
+    email_recipient = ['a.papagiannaki@meazon.com','s.koutroubinas@meazon.com','s.kleftogiannis@meazon.com']
 
     # Setup logging
     email_sender = 'support@meazon.com'
@@ -147,8 +151,13 @@ def read_data(acc_token, devid, address, start_time, end_time, descriptors):
     return df
 
 def legacy_info(df, device, legadict, val):
-        
-    ind = df.index[-1]
+    """
+    Write incident info to json
+    """
+    if val=='1':
+        ind = df.index[-1]
+    else:
+        ind = df
     legadict[device] = {'ts':str(ind),'status':val}
     print(legadict)
     # Write the data to the file
@@ -161,16 +170,17 @@ def check_phase_deviation(df):
     """
     Check if the each phase angle exceeds 120 +- 2 degrees
     """
-    df1 = df.loc[(np.abs(df['angleAB'])>122) | (np.abs(df['angleAB'])<118)].copy()
-    df2 = df.loc[(np.abs(df['angleAC'])>122) | (np.abs(df['angleAC'])<118)].copy()
-    df3 = df.loc[(np.abs(df['angleBC'])>122) | (np.abs(df['angleBC'])<118)].copy()
+    tmp = df.copy()
+    df1 = tmp.loc[(np.abs(tmp['angleAB'])>122) | (np.abs(tmp['angleAB'])<118)].copy()
+    df2 = tmp.loc[(np.abs(tmp['angleAC'])>122) | (np.abs(tmp['angleAC'])<118)].copy()
+    df3 = tmp.loc[(np.abs(tmp['angleBC'])>122) | (np.abs(tmp['angleBC'])<118)].copy()
     
     
-    if ((not df1.empty) | (not df2.empty) | (not df3.empty)):
+    if (((not df1.empty) & (len(df1)>2)) | ((not df2.empty) & (len(df2)>2)) | ((not df3.empty) & (len(df3)>2))):
         failure = True
     else:
         failure = False
-    return failure
+    return tmp, failure
 
 
 def check_sum_phases(df):
@@ -188,24 +198,36 @@ def check_sum_phases(df):
         sum_failure = False
     return df,sum_failure
     
-def detect_alarms(df, address, acc_token, device, devtoken,label, legadict):
+
+def add_event(device, legadict, start_time):
+    """
+    Write finished event in csv file
+    """
+    new_event = [device, legadict[device]['ts'], start_time]
+    csv_file = 'events.csv'
+    with open(csv_file, mode='a', newline='') as file:
+        writer = csv.writer(file)
+        # Add the new row
+        writer.writerow(new_event)
+
+def detect_alarms(df, address, acc_token, device, devtoken,label, legadict, start_time):
     """
     Check if V-V rules
     """
-
-    df.sort_index(inplace=True)
-    phase_failure = check_phase_deviation(df.copy())
-    [df, sum_failure] = check_sum_phases(df.copy())
     
+    df.sort_index(inplace=True)
+    [singledf,phase_failure] = check_phase_deviation(df.copy())
+    [df, sum_failure] = check_sum_phases(df.copy())
     if (phase_failure or sum_failure):
+        print(device)
         if device in legadict.keys():
             if legadict[device]['status']=='0':
-                legadict = legacy_info(df, device, legadict,'1')
+                legadict = legacy_info(df if sum_failure else singledf, device, legadict, '1')
                 write_df(df, address, acc_token, devtoken)
                 print('Alarm for device ', device, label)
                 send_email(device, label)
         else:
-            legadict = legacy_info(df, device, legadict,'1')
+            legadict = legacy_info(df if sum_failure else singledf, device, legadict, '1')
             write_df(df, address, acc_token, devtoken)
             print('Alarm for device ', device, label)
             send_email(device, label)
@@ -213,7 +235,8 @@ def detect_alarms(df, address, acc_token, device, devtoken,label, legadict):
         if device in legadict.keys():
             if legadict[device]['status']=='1':
                 print('Alarm finished for device ', device, label)
-                legadict = legacy_info(df, device, legadict,'0')
+                add_event(device, legadict, start_time)
+                legadict = legacy_info(start_time, device, legadict,'0')
         
         
 
@@ -232,13 +255,12 @@ def main():
     
     start_time = end_time +relativedelta(minutes=-10)
     
-    if start_time.minute==0:
-        print('Time running script:',start_time, end_time)
+    # print('Time running script:',start_time, end_time)
     start_time = str(int(start_time.timestamp()) * 1000)
     end_time = str(int(end_time.timestamp()) * 1000)
 
-    # start_time = '1725990600000'
-    # end_time = '1725991200000'
+    #start_time = '1726653000000'
+    #end_time = '1726653600000'
     
     address = 'http://localhost:8080'
     # address = 'https://mi6.meazon.com'
@@ -264,16 +286,14 @@ def main():
             for j in range(0, len(r2)):
                 device = r2[j]['toName']
                 if device[:3]=='102':
-                    #print(device)
-                            
-                    # call export KPIs function
+                
                     #try:
                     [devid, acc_token, label, devtoken] = get_dev_info(device, address)                   
                     descriptors = 'angleAB,angleAC,angleBC'    
                     # latest_status = read_latest(acc_token, devid, address, end_time, 'alarm_status')
                     df = read_data(acc_token, devid, address,  start_time, end_time, descriptors)
                     if not df.empty:
-                        detect_alarms(df, address, acc_token, device, devtoken, label, legadict)
+                        detect_alarms(df, address, acc_token, device, devtoken, label, legadict, start_time)
                     #except Exception as e:
                     #    print(f"Error reading data for device {device}: {e}")
                     #    continue
