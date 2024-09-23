@@ -16,14 +16,17 @@ from email.mime.base import MIMEBase
 from email import encoders
 import logging
 BASEPATH = '/home/azureuser/HEDNOKPIs/voltageFailDetector/'
+
 def send_email(device, label):
     """
     Send informative email
     """
     email_subject =  'Ειδοποίηση για πτώση τάσης/καμμένη ασφάλεια'
     email_message = 'Alarm στον μετασχηματιστή '+label+' με serial number '+device+'. \n\n Πιθανώς καμμένη ασφάλεια στη μέση τάση, ενεργήστε άμεσα για την αποκατάσταση του προβλήματος.'
-    email_recipient = ['a.papagiannaki@meazon.com','s.koutroubinas@meazon.com','s.kleftogiannis@meazon.com']
-
+    #email_recipient = ['a.papagiannaki@meazon.com','s.koutroubinas@meazon.com','s.kleftogiannis@meazon.com','g.siapalidis@deddie.gr','k.agavanakis@meazon.com']
+    email_recipient = ['a.papagiannaki@meazon.com']
+    email_bcc = ['s.koutroubinas@meazon.com','s.kleftogiannis@meazon.com','k.agavanakis@meazon.com']
+    
     # Setup logging
     email_sender = 'support@meazon.com'
     rcpt = email_recipient
@@ -161,42 +164,58 @@ def legacy_info(df, device, legadict, val):
     legadict[device] = {'ts':str(ind),'status':val}
     print(legadict)
     # Write the data to the file
-    with open('legacy_info.json', 'w', encoding='utf-8') as file:
+    with open(BASEPATH+'legacy_info.json', 'w', encoding='utf-8') as file:
         json.dump(legadict, file, ensure_ascii=False, indent=4)
 
     return legadict
 
-def check_phase_deviation(df):
-    """
-    Check if the each phase angle exceeds 120 +- 2 degrees
-    """
-    tmp = df.copy()
-    df1 = tmp.loc[(np.abs(tmp['angleAB'])>122) | (np.abs(tmp['angleAB'])<118)].copy()
-    df2 = tmp.loc[(np.abs(tmp['angleAC'])>122) | (np.abs(tmp['angleAC'])<118)].copy()
-    df3 = tmp.loc[(np.abs(tmp['angleBC'])>122) | (np.abs(tmp['angleBC'])<118)].copy()
+# def check_phase_deviation(df):
+#     """
+#     Check if the each phase angle exceeds 120 +- 2 degrees
+#     """
+#     tmp = df.copy()
+#     df1 = tmp.loc[(np.abs(tmp['angleAB'])>122) | (np.abs(tmp['angleAB'])<118)].copy()
+#     df2 = tmp.loc[(np.abs(tmp['angleAC'])>122) | (np.abs(tmp['angleAC'])<118)].copy()
+#     df3 = tmp.loc[(np.abs(tmp['angleBC'])>122) | (np.abs(tmp['angleBC'])<118)].copy()
     
     
-    if (((not df1.empty) & (len(df1)>2)) | ((not df2.empty) & (len(df2)>2)) | ((not df3.empty) & (len(df3)>2))):
-        failure = True
-    else:
-        failure = False
-    return tmp, failure
+#     if (((not df1.empty) & (len(df1)>2)) | ((not df2.empty) & (len(df2)>2)) | ((not df3.empty) & (len(df3)>2))):
+#         failure = True
+#     else:
+#         failure = False
+#     return tmp, failure
 
 
-def check_sum_phases(df):
+# def check_sum_phases(df):
+#     """
+#     Check if the sum of absulote V-V angles exceeds the threshold of 360+-0.5 degrees
+#     """
+#     df['sumAngles'] = np.abs(df['angleAB'])+np.abs(df['angleBC'])+np.abs(df['angleAC'])
+
+#     df = df.loc[((df['sumAngles']>360.5) | (df['sumAngles']<359.5))]
+#     df = df[['sumAngles']]
+#     if ((not df.empty) & (len(df)>2)):
+#         # Raise alarm
+#         sum_failure = True
+#     else:
+#         sum_failure = False
+#     return df,sum_failure
+
+def check_undervoltage(df):
     """
-    Check if the sum of absulote V-V angles exceeds the threshold of 360+-0.5 degrees
+    Check if two phases are below 220V for at least 3 consecutive values
     """
-    df['sumAngles'] = np.abs(df['angleAB'])+np.abs(df['angleBC'])+np.abs(df['angleAC'])
+    undervoltages = {'A':0,'B':0,'C':0}
+    threshold = 220
+    under_threshold = df < threshold
+    
+    rolling_under_threshold = under_threshold.rolling(window=3).sum() == 3
+    df['alarm'] = (rolling_under_threshold.sum(axis=1) >= 2)
+    vlt_failure = True if df['alarm'].any() else False
+    
+    
+    return df,vlt_failure
 
-    df = df.loc[((df['sumAngles']>360.5) | (df['sumAngles']<359.5))]
-    df = df[['sumAngles']]
-    if ((not df.empty) & (len(df)>2)):
-        # Raise alarm
-        sum_failure = True
-    else:
-        sum_failure = False
-    return df,sum_failure
     
 
 def add_event(device, legadict, start_time):
@@ -204,7 +223,7 @@ def add_event(device, legadict, start_time):
     Write finished event in csv file
     """
     new_event = [device, legadict[device]['ts'], start_time]
-    csv_file = 'events.csv'
+    csv_file = BASEPATH+'events.csv'
     with open(csv_file, mode='a', newline='') as file:
         writer = csv.writer(file)
         # Add the new row
@@ -216,18 +235,20 @@ def detect_alarms(df, address, acc_token, device, devtoken,label, legadict, star
     """
     
     df.sort_index(inplace=True)
-    [singledf,phase_failure] = check_phase_deviation(df.copy())
-    [df, sum_failure] = check_sum_phases(df.copy())
-    if (phase_failure or sum_failure):
+    #[singledf,phase_failure] = check_phase_deviation(df.copy())
+    #[df, sum_failure] = check_sum_phases(df.copy())
+    [df,vlt_failure] = check_undervoltage(df)
+    # if (phase_filure or sum_failure):
+    if vlt_failure:
         print(device)
         if device in legadict.keys():
             if legadict[device]['status']=='0':
-                legadict = legacy_info(df if sum_failure else singledf, device, legadict, '1')
+                legadict = legacy_info(df, device, legadict, '1')
                 write_df(df, address, acc_token, devtoken)
                 print('Alarm for device ', device, label)
                 send_email(device, label)
         else:
-            legadict = legacy_info(df if sum_failure else singledf, device, legadict, '1')
+            legadict = legacy_info(df, device, legadict, '1')
             write_df(df, address, acc_token, devtoken)
             print('Alarm for device ', device, label)
             send_email(device, label)
@@ -239,15 +260,14 @@ def detect_alarms(df, address, acc_token, device, devtoken,label, legadict, star
                 legadict = legacy_info(start_time, device, legadict,'0')
         
         
-
-
 def main():
-    filename = 'legacy_info.json'
+    filename = BASEPATH+'legacy_info.json'
     if os.path.isfile(filename):
         with open(filename, 'r', encoding='utf-8') as file:
             legadict = json.load(file)
     else:
         legadict = {}
+    print('legacy existing:',legadict)
     #define start - end date
     end_time = datetime.datetime.now()
     end_time = end_time - datetime.timedelta(seconds=end_time.second,
@@ -289,7 +309,8 @@ def main():
                 
                     #try:
                     [devid, acc_token, label, devtoken] = get_dev_info(device, address)                   
-                    descriptors = 'angleAB,angleAC,angleBC'    
+                    #descriptors = 'angleAB,angleAC,angleBC'
+                    descriptors = 'vltA,vltB,vltC'    
                     # latest_status = read_latest(acc_token, devid, address, end_time, 'alarm_status')
                     df = read_data(acc_token, devid, address,  start_time, end_time, descriptors)
                     if not df.empty:
