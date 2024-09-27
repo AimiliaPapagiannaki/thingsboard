@@ -112,6 +112,43 @@ def read_data(acc_token, devid, start_time, end_time, descriptors, entity):
     return df
 
 
+def correct_cumulative_column(df, column_name):
+    # Extract the column to a list for easier manipulation
+    values = df[column_name].tolist()
+
+    # Iterate through the list and correct the values
+    for i in range(1, len(values)):
+        if values[i] < values[i-1]:
+            diff = values[i-1] - values[i]
+            for j in range(i, len(values)):
+                values[j] += diff
+    
+    # Assign the corrected values back to the DataFrame
+    df[column_name] = values
+    return df
+
+def preprocess_nrg(df):
+    for ph in ['A','B','C']:
+        # check if there are incidents of negative delta nrg
+        if not df.loc[df['cnrg'+ph]<df['cnrg'+ph].shift()].empty:
+            print('negative')
+            df = correct_cumulative_column(df, 'cnrg'+ph)
+    
+    return df
+
+def process_cnrg(df):
+    df = df.dropna()
+    df = preprocess_nrg(df)
+    for ph in ['A','B','C']:
+        df['cnrg'+ph] = df['cnrg'+ph]-df['cnrg'+ph].shift()
+        
+    df['totalCleanNrg'] = df['cnrgA']+df['cnrgB']+df['cnrgC']
+    df = df.resample('1H', label='left').sum()
+    df = df.dropna()
+    df = df.iloc[1:]
+    return df  
+
+
 def parse_args():
     """
     Parse input arguments and assign them to relative variables
@@ -135,19 +172,31 @@ def main(argv):
     en_date = datetime.datetime.fromtimestamp(int(args.end_time)/1000, tz=athens_tz)
     en_date = en_date.strftime('%d_%b_%Y')
     
-    interval_name = 'Daily' if args.interval=='D' else 'Monthly'
+    if args.interval=='D':
+        interval_name = 'Daily'
+    elif args.interval=='M':
+        interval_name = 'Monthly'
+    elif args.interval=='H':
+        interval_name = 'Hourly'
+    
     filename = 'Evgenidio_'+st_date+'_'+en_date+'_'+interval_name+'.xlsx'
     excel_file_path = config.XLSX_DIR+filename
     
     mapcols = {'clean_nrgA':'Energy A (kWh)',
                'clean_nrgB':'Energy B (kWh)',
                'clean_nrgC':'Energy C (kWh)',
-               'totalCleanNrg': 'Total Energy (kWh)'
+               'totalCleanNrg': 'Total Energy (kWh)',
+               'cnrgA':'Energy A (kWh)',
+               'cnrgB':'Energy B (kWh)',
+               'cnrgC':'Energy C (kWh)',
                }
     acc_token = get_access_token()
     
-    
-    descriptors = 'clean_nrgA,clean_nrgB,clean_nrgC,totalCleanNrg'
+    if args.interval=='H':
+        descriptors = 'cnrgA,cnrgB,cnrgC'
+        args.start_time = str(int(args.start_time)-int(3e5))
+    else:
+        descriptors = 'clean_nrgA,clean_nrgB,clean_nrgC,totalCleanNrg'
     labels = []
     ids = []
     entities = []
@@ -168,10 +217,14 @@ def main(argv):
     with pd.ExcelWriter(excel_file_path) as writer:
         for i in range(0,len(labels)):
             df = read_data(acc_token, ids[i],  args.start_time, args.end_time, descriptors, entities[i])
-            df = df.resample('1D').max()
-            # df['Average hourly active power (kW)'] = df['totalCleanNrg']/(1000*24 )
-            # df = df.resample(args.interval).agg({'clean_nrgA':'sum','clean_nrgB':'sum','clean_nrgC':'sum','totalCleanNrg':'sum','Average hourly active power (kW)':'mean'})
-            df = df.resample(args.interval).sum()
+
+            if args.interval == 'H':
+                df = process_cnrg(df)
+            else:
+                df = df.resample('1D').max()
+                # df['Average hourly active power (kW)'] = df['totalCleanNrg']/(1000*24 )
+                # df = df.resample(args.interval).agg({'clean_nrgA':'sum','clean_nrgB':'sum','clean_nrgC':'sum','totalCleanNrg':'sum','Average hourly active power (kW)':'mean'})
+                df = df.resample(args.interval).sum()
             for col in df.columns:
                 if col in mapcols.keys():
                     df[col] = np.round(df[col]/1000,2)
