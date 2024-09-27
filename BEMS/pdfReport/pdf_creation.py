@@ -49,17 +49,21 @@ def create_pdf(output_dir, pdf_dir, month, year):
         pdf.add_page()
         pdf.set_xy(50, 10)
         pdf.image(output_dir+'table_enpis.png', x=30, y=None, w=150, h=150, type='', link='')
+        pdf.set_xy(10, 180)
+        pdf.image(output_dir+'monthly_linetotal.png', x=None, y=None, w=170, h=60, type='', link='')
     except:
         print("page 3")
 
     try:
         pdf.add_page()
         pdf.set_xy(10, 30)
-        pdf.image(output_dir+'monthly_linetotal.png', x=None, y=None, w=170, h=60, type='', link='')
-        pdf.set_xy(10, 110)
+        # pdf.image(output_dir+'monthly_linetotal.png', x=None, y=None, w=170, h=60, type='', link='')
         pdf.image(output_dir+'monthly_lineplanet.png', x=None, y=None, w=170, h=60, type='', link='')
-        pdf.set_xy(10, 180)
+        pdf.set_xy(10, 110)
+        # pdf.image(output_dir+'monthly_lineplanet.png', x=None, y=None, w=170, h=60, type='', link='')
         pdf.image(output_dir+'monthly_lineamfi.png', x=None, y=None, w=170, h=60, type='', link='')
+        pdf.set_xy(10, 180)
+        pdf.image(output_dir+'monthly_lineket.png', x=None, y=None, w=170, h=60, type='', link='')
     except:
         print("page 4")
     
@@ -67,42 +71,57 @@ def create_pdf(output_dir, pdf_dir, month, year):
         pdf.add_page()
         pdf.set_xy(50, 20)
         pdf.image(output_dir+'heatmap.png', x=40, y=None, w=130, h=115, type='', link='')
-        pdf.set_xy(40, 150)
-        pdf.image(output_dir+'bar_daily_Σύνολο φορτίων.png', x=30, y=None, w=150, h=100, type='', link='')
+        # pdf.set_xy(40, 150)
+        # pdf.image(output_dir+'bar_daily_Σύνολο φορτίων.png', x=30, y=None, w=150, h=100, type='', link='')
     except:
         print("page 5")
 
     try:
         pdf.add_page()
         pdf.set_xy(50, 20)
-        pdf.image(output_dir+'bar_daily_Πλανητάριο.png', x=30, y=None, w=150, h=100, type='', link='')
+        pdf.image(output_dir+'bar_daily_Σύνολο φορτίων.png', x=30, y=None, w=150, h=100, type='', link='')
+        
         pdf.set_xy(40, 150)
-        pdf.image(output_dir+'bar_daily_Αμφιθέατρο.png', x=30, y=None, w=150, h=100, type='', link='')
+        pdf.image(output_dir+'bar_daily_Πλανητάριο.png', x=30, y=None, w=150, h=100, type='', link='')
+        
     except:
         print("page 6")
     
     try:
         pdf.add_page()
         pdf.set_xy(50, 20)
-        pdf.image(output_dir+'bar_daily_Σύνολο κλιματισμού.png', x=30, y=None, w=150, h=100, type='', link='')
+        pdf.image(output_dir+'bar_daily_Αμφιθέατρο.png', x=30, y=None, w=150, h=100, type='', link='')
+        
         pdf.set_xy(40, 150)
-        pdf.image(output_dir+'bar_daily_Σύνολο φωτισμού.png', x=30, y=None, w=150, h=100, type='', link='')
+        pdf.image(output_dir+'bar_daily_Κετ.png', x=30, y=None, w=150, h=100, type='', link='')
+        # pdf.image(output_dir+'bar_daily_Σύνολο κλιματισμού.png', x=30, y=None, w=150, h=100, type='', link='')
+        # pdf.image(output_dir+'bar_daily_Σύνολο φωτισμού.png', x=30, y=None, w=150, h=100, type='', link='')
     except:
         print("page 7")
-
+    
     try:
         pdf.add_page()
         pdf.set_xy(50, 20)
-        pdf.image(output_dir+'table_10maxpwr.png', x=40, y=None, w=130, h=220, type='', link='')
+        pdf.image(output_dir+'bar_daily_Σύνολο κλιματισμού.png', x=30, y=None, w=150, h=100, type='', link='')
+        
+        pdf.set_xy(40, 150)
+        pdf.image(output_dir+'bar_daily_Σύνολο φωτισμού.png', x=30, y=None, w=150, h=100, type='', link='')
     except:
         print("page 8")
 
     try:
         pdf.add_page()
         pdf.set_xy(50, 20)
-        pdf.image(output_dir+'table_maxnrg_split.png', x=35, y=None, w=160, h=150, type='', link='')
+        pdf.image(output_dir+'table_10maxpwr.png', x=40, y=None, w=130, h=220, type='', link='')
     except:
         print("page 9")
+
+    try:
+        pdf.add_page()
+        pdf.set_xy(50, 20)
+        pdf.image(output_dir+'table_maxnrg_split.png', x=35, y=None, w=160, h=150, type='', link='')
+    except:
+        print("page 10")
 
     try:
         pdf.add_page()
@@ -111,13 +130,13 @@ def create_pdf(output_dir, pdf_dir, month, year):
         pdf.set_xy(40, 150)
         pdf.image(output_dir+'bar_compaired.png', x=30, y=None, w=150, h=100, type='', link='')
     except:
-        print("page 10")
+        print("page 11")
     try:
         pdf.add_page()
         pdf.set_xy(50, 20)
         pdf.image(output_dir+'bar_yearly.png', x=30, y=None, w=150, h=100, type='', link='')
     except:
-        print("page 11")
+        print("page 12")
     ##############################
     filename = 'Evgenidio_'+str(month)+'_'+str(year)+'.pdf'
     pdf.output(pdf_dir+filename , 'F')

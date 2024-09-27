@@ -22,7 +22,7 @@ def main():
     month = newts.month
     year = newts.year
     
-    #month = 7
+    #month = 4
     #year = 2024 
 
     startm = datetime.datetime(year = year, month=month, day=1)

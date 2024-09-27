@@ -89,7 +89,7 @@ def get_attr(address, acc_token, devid, month, start_time, end_time, tmzn):
 
     for col in df_occ.columns:
         df_occ[col] = pd.to_numeric(df_occ[col], errors='coerce')
-    df_occ.rename(columns={'Αμφιθέατρο':'Χρήση Αμφιθέατρο','Πλανητάριο':'Χρήση Πλανητάριο'}, inplace=True)
+    df_occ.rename(columns={'Αμφιθέατρο':'Χρήση Αμφιθέατρο','Πλανητάριο':'Χρήση Πλανητάριο','Κέντρο Ερευνας & Τεχνολογίας (ΚΕΤ)':'Χρήση ΚΕΤ'}, inplace=True)
     df_occ = df_occ.resample('MS').first()
     
 
@@ -191,7 +191,7 @@ def retrieve_raw(url, start_time, end_time, tmzn, start_time2, end_time2, month)
     # Fetch data for 3 devices from March 1st 2024
     
     monthly_dfs = pd.DataFrame([])
-    for device in ['102.402.002072','Πλανητάριο','Αμφιθέατρο']:
+    for device in ['102.402.002072','Πλανητάριο','Αμφιθέατρο','Κέντρο Ερευνας & Τεχνολογίας (ΚΕΤ)']:
         entity = 'device' if (device == '102.402.002072') else 'asset'
         devid = get_devid(url, device, entity)
 
