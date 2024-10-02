@@ -182,7 +182,8 @@ def countpfails(pfail,alarms):
     return nr_fails,min_pfails,max_pfails
         
         
-        
+def calculate_rms(row):
+    return np.sqrt(np.mean(row ** 2))   
 
 
 
@@ -190,13 +191,13 @@ def main(device, start_time, end_time, assetname,devid, acc_token, label,kpis,is
 #def main(argv):
 
     interval = 1 # interval in minutes
-    descriptors = 'vltA,vltB,vltC,frqA,frqB,frqC,vthdA,vthdB,vthdC,ithdA,ithdB,ithdC'
+    descriptors = 'vltA,vltB,vltC,curA,curB,curC,frqA,frqB,frqC,vthdA,vthdB,vthdC,ithdA,ithdB,ithdC'
     address = 'http://localhost:8080'
 
     
     if not isdist:
         nominal = get_attr(acc_token,devid,address)
-        nomcur = np.round((nominal*1000/230)/2,2)
+        nomcur = np.round((nominal*1000/230)/3,2)
     else:
         nominal = ''
         nomcur = 60
@@ -228,8 +229,23 @@ def main(device, start_time, end_time, assetname,devid, acc_token, label,kpis,is
 
     
         df['totalVlt'] = (df['vltA']+df['vltB']+df['vltC'])/3
-        df['totalVthd'] = (df['vthdA']+df['vthdB']+df['vthdC'])/3
-        df['totalIthd'] = (df['ithdA']+df['ithdB']+df['ithdC'])/3
+        #df['totalVthd'] = (df['vthdA']+df['vthdB']+df['vthdC'])/3
+        
+        if 'vthdA' in df.columns:
+            harmflag = 1
+            df['totalVthd'] = df.apply(lambda row: calculate_rms(row[['vthdA', 'vthdB', 'vthdC']]), axis=1)
+            print(df['totalVthd'].head(10))
+        
+            #df['totalIthd'] = (df['ithdA']+df['ithdB']+df['ithdC'])/3
+            tmpcur = df.copy()
+            maxIharm = {}
+            for ph in ['A','B','C']:
+                tmpcur = tmpcur.loc[tmpcur['cur'+ph]>0.7*nomcur]
+                maxIharm[ph] = np.round(tmpcur['ithd'+ph].max(),3)
+        else:
+            harmflag = 0
+            
+        
         df['deviation'] = ((df['totalVlt']-230)/230)*100
 
         df['difA'] = np.abs(df['vltA']-df['totalVlt'])
@@ -238,12 +254,14 @@ def main(device, start_time, end_time, assetname,devid, acc_token, label,kpis,is
         df['imbalance'] = (df[['difA', 'difB', 'difC']].max(axis=1)/df['totalVlt'])*100
         if 'frqA' in df.columns:
             frqflag=1
-            dfreq = df[['frqA','frqB','frqC']].copy()
+            dfreq = df[['frqA','frqB','frqC','deviation']].copy()
+            dfreq = dfreq.loc[(dfreq['deviation']<=10) & (dfreq['deviation']>=-10)]
             
             # plot min max frequencies
             df = df.drop(['frqA','frqB','frqC'],axis=1)
             dfreq['efrq'] = (dfreq['frqA']+dfreq['frqB']+dfreq['frqC'])/3
             dfreq['frqdev'] = ((dfreq['efrq']-50)/50)*100
+            print(dfreq.head())
             
             # dfreq = dfreq.dropna()
             
@@ -259,23 +277,33 @@ def main(device, start_time, end_time, assetname,devid, acc_token, label,kpis,is
 
         vimb95 = np.round(df['imbalance'].quantile(.95),3)
         
-        vthd95 = np.round(df['totalVthd'].quantile(.95),3)
-        vthd100 = np.round(df['totalVthd'].max(),3)
-        
-        ithd100 = np.round(df['totalIthd'].max(),3)
-    
+        if harmflag==1:
+            vthd95 = np.round(df['totalVthd'].quantile(.95),3)
+            iTHDA = maxIharm['A']
+            iTHDB = maxIharm['B']
+            iTHDC = maxIharm['C']
+            print(iTHDA,iTHDB,iTHDC)
         if frqflag==1:
             frqdev995 = np.round(dfreq['frqdev'].quantile(0.995),3)
             frqdev100pos = np.round(dfreq['frqdev'].max(),3)
             frqdev100neg = np.round(dfreq['frqdev'].min(),3) if dfreq['frqdev'].min()<0 else 0
+            print('FRQ:',frqdev995,frqdev100pos,frqdev100neg)
 
         kpis['Max voltage deviation (95% of 10min intervals)'] = dev95
         kpis['Max positive voltage deviation (100% of 10min intervals)'] = dev100pos
         kpis['Max negative voltage deviation (100% of 10min intervals)'] = dev100neg
         kpis['Max voltage imbalance (95% of 10min intervals)'] = vimb95
-        kpis['Max voltage THD (95% of 10min intervals)'] = vthd95
-        kpis['Max voltage THD (100% of 10min intervals)'] = vthd100
-        kpis['Max current THD (100% of 10min intervals)'] = ithd100
+        
+        if harmflag==1:
+            kpis['Max voltage THD (95% of 10min intervals)'] = vthd95
+            kpis['Max current THD L1'] = iTHDA
+            kpis['Max current THD L2'] = iTHDB
+            kpis['Max current THD L3'] = iTHDC
+        else:
+            kpis['Max voltage THD (95% of 10min intervals)'] = '-'
+            kpis['Max current THD L1'] = '-'
+            kpis['Max current THD L2'] = '-' 
+            kpis['Max current THD L3'] = '-'
         
     else:
         kpis['Max voltage deviation (95% of 10min intervals)'] = '-'
@@ -283,8 +311,9 @@ def main(device, start_time, end_time, assetname,devid, acc_token, label,kpis,is
         kpis['Max negative voltage deviation (100% of 10min intervals)'] = '-'
         kpis['Max voltage imbalance (95% of 10min intervals)'] = '-'
         kpis['Max voltage THD (95% of 10min intervals)'] = '-'
-        kpis['Max voltage THD (100% of 10min intervals)'] = '-' 
-        kpis['Max current THD (100% of 10min intervals)'] = '-'
+        kpis['Max current THD L1'] = '-'
+        kpis['Max current THD L2'] = '-' 
+        kpis['Max current THD L3'] = '-'
         
         frqflag=0
     
@@ -331,6 +360,16 @@ def main(device, start_time, end_time, assetname,devid, acc_token, label,kpis,is
     kpis['Nr. of Voltage swells'] = nswells
     kpis['Occurences of Frequency over limit'] = nfreqover
     kpis['Occurences of Frequency under limit'] = nfrequnder  
+    
+    
+    # get RVC events data
+    df = read_data(acc_token, devid, address,  start_time, end_time, 'rvcA,rvcB,rvcC')
+    if not df.empty:
+        df['totalrvc'] = df['rvcA']+df['rvcB']+df['rvcC']
+        totalRVC = df['totalrvc'].sum()
+        kpis['Nr. of RVCs'] = totalRVC
+    else:
+        kpis['Nr. of RVCs'] = 0 
      
     del df,alarms
     
