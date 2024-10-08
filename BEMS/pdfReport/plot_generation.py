@@ -140,9 +140,10 @@ def create_table(df, output_dir, specific_loads=None):
 def create_pie(df, output_dir, specific_loads=None):
     '''Table and pie plot'''
     df_filtered = df.copy()
-    df_filtered = df_filtered.rename(columns={'Γενικός διακόπτης':'Σύνολο φορτίων'})
-    df_filtered = df[df.index != 'Σύνολο φορτίων']
-            
+    df_filtered = df_filtered.rename({'Γενικός διακόπτης':'Σύνολο φορτίων'})
+    
+    df_filtered = df_filtered[df_filtered.index != 'Σύνολο φορτίων']
+    
     if specific_loads:
         df_specific = df_filtered.loc[specific_loads]
         other_loads_sum = df_filtered.loc[~df_filtered.index.isin(specific_loads)].sum()
